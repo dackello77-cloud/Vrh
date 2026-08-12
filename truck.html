@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kompanije i kamioni</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #fff;
+    }
+
+    main {
+      width: 100%;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    button {
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 10px;
+      background: #22c55e;
+      color: #052e16;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+
+    #status {
+      color: #94a3b8;
+      margin-bottom: 14px;
+    }
+
+    #status.error {
+      color: #f87171;
+    }
+
+    .company {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px;
+      margin-bottom: 10px;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      background: #1e293b;
+    }
+
+    .company-name {
+      font-weight: bold;
+      color: #facc15;
+    }
+
+    .truck-count {
+      min-width: 52px;
+      font-size: 22px;
+      font-weight: bold;
+      text-align: right;
+    }
+
+    .truck-label {
+      display: block;
+      margin-top: 2px;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: normal;
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: 16px;
+      }
+
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <header>
+      <h1>Kompanije i kamioni</h1>
+      <button id="refreshButton" type="button">Osveži podatke</button>
+    </header>
+
+    <div id="status">Učitavanje podataka...</div>
+    <div id="companies"></div>
+  </main>
+
+  <script>
+    const API_URL = "https://royal-paper-656b.dackello77.workers.dev";
+
+    const companiesElement = document.getElementById("companies");
+    const statusElement = document.getElementById("status");
+    const refreshButton = document.getElementById("refreshButton");
+
+    function getLocalDate() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+
+      return `${year}-${month}-${day}`;
+    }
+
+    function getLatestTruckCount(company) {
+      const today = getLocalDate();
+      const dates = Object.keys(company.dates || {})
+        .filter((date) => date <= today)
+        .sort();
+
+      if (dates.length === 0) {
+        return { count: 0, date: "Nema podataka" };
+      }
+
+      const latestDate = dates[dates.length - 1];
+      const count = company.dates[latestDate]?.eld_count ?? 0;
+
+      return { count, date: latestDate };
+    }
+
+    function renderCompanies(companies) {
+      companiesElement.replaceChildren();
+
+      companies
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+        .forEach((company) => {
+          const latest = getLatestTruckCount(company);
+          const card = document.createElement("div");
+          const name = document.createElement("div");
+          const countBox = document.createElement("div");
+          const count = document.createElement("div");
+          const label = document.createElement("span");
+
+          card.className = "company";
+          name.className = "company-name";
+          countBox.className = "truck-count";
+          label.className = "truck-label";
+
+          name.textContent = company.name || "Nepoznata kompanija";
+          count.textContent = latest.count;
+          label.textContent = `kamiona · ${latest.date}`;
+
+          countBox.append(count, label);
+          card.append(name, countBox);
+          companiesElement.appendChild(card);
+        });
+    }
+
+    async function loadCompanies() {
+      refreshButton.disabled = true;
+      statusElement.className = "";
+      statusElement.textContent = "Učitavanje podataka...";
+
+      try {
+        const response = await fetch(API_URL);
+
+        if (!response.ok) {
+          throw new Error(`API je vratio status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const companies = Object.values(data.data?.companies || {});
+
+        renderCompanies(companies);
+        statusElement.textContent = `Prikazano kompanija: ${companies.length}`;
+      } catch (error) {
+        statusElement.className = "error";
+        statusElement.textContent = `Podaci nisu učitani: ${error.message}`;
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    refreshButton.addEventListener("click", loadCompanies);
+    loadCompanies();
+  </script>
+</body>
+</html>

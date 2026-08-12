@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VRH — Kamioni</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <nav class="page-nav">
+    <button id="navOverview" class="page-nav-btn is-active">Pregled kamiona</button>
+    <button id="navReports" class="page-nav-btn">Izveštaj</button>
+  </nav>
+
+  <div id="pageOverview">
+    <header class="topbar">
+      <h1>VRH/RST Pregled kamiona</h1>
+
+      <div class="month-nav">
+        <button id="prevMonth" class="btn btn-icon" title="Prethodni mesec">&#8592;</button>
+        <span id="monthLabel" class="month-label"></span>
+        <button id="nextMonth" class="btn btn-icon" title="Sledeći mesec">&#8594;</button>
+      </div>
+
+      <div class="totals">
+        <span class="total-item">VRH: <strong id="totalVrh">0</strong></span>
+        <span class="total-item">RST: <strong id="totalRst">0</strong></span>
+      </div>
+
+      <div class="filters">
+        <input type="text" id="searchInput" class="search-input" placeholder="Pretraga firme..." />
+        <select id="statusFilter">
+          <option value="all">Sve firme</option>
+          <option value="current">Current</option>
+          <option value="behind">Behind</option>
+        </select>
+      </div>
+
+      <div class="actions">
+        <button id="importBtn" class="btn">Uvoz iz Excela</button>
+        <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden />
+      </div>
+    </header>
+
+    <div class="legend">
+      <span class="legend-item"><span class="swatch swatch-red"></span> T — prvi dan kad je dostignut mesečni maksimum</span>
+      <span class="legend-item"><span class="swatch swatch-orange"></span> A — dodato kamiona na dan mesečnog maksimuma</span>
+      <span class="legend-item"><span class="swatch swatch-green"></span> A — dodato kamiona, ali nije mesečni maksimum</span>
+      <span class="legend-item">T = Total, S = Start, B = Basic, A = Advanced — kolona za unos se bira po firmi (desni klik), podrazumevano A</span>
+      <span class="legend-item">Crveno na T označava i dan kad besplatan period ističe; tokom free perioda nema markiranja</span>
+    </div>
+
+    <main class="table-wrap">
+      <table id="grid" class="grid">
+        <thead>
+          <tr id="gridHeadRow1"></tr>
+          <tr id="gridHeadRow2"></tr>
+        </thead>
+        <tbody id="gridBody"></tbody>
+      </table>
+      <p id="emptyState" class="empty-state" hidden>Nema firmi. Uvezi iz Excela.</p>
+    </main>
+  </div>
+
+  <div id="pageReports" hidden>
+    <header class="topbar">
+      <h1>Izveštaj</h1>
+
+      <div class="report-tabs">
+        <button id="reportTabDaily" class="report-tab is-active">Dnevni izveštaj</button>
+        <button id="reportTabBehind" class="report-tab">Behind izveštaj</button>
+        <button id="reportTabCurrent" class="report-tab">Current izveštaj</button>
+      </div>
+
+      <div class="report-date-picker">
+        <label id="reportDateLabel">Datum <input type="date" id="reportDate" /></label>
+        <button id="generateReportBtn" class="btn btn-primary">Generiši</button>
+        <button id="downloadPdfBtn" class="btn">Kreiraj PDF</button>
+      </div>
+    </header>
+
+    <main id="reportContent" class="report-content"></main>
+  </div>
+
+  <!-- Modal: izmena firme (desni klik na naziv) ili nova firma iz API-ja -->
+  <div id="companyModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2 id="companyModalTitle">Izmena firme</h2>
+      <p id="companyModalName" class="modal-subtitle"></p>
+      <form id="companyForm">
+        <label>
+          Status
+          <select id="companyStatus">
+            <option value="current">Current</option>
+            <option value="behind">Behind</option>
+          </select>
+        </label>
+        <label>
+          Cena
+          <input type="number" id="companyPrice" step="0.01" min="0" />
+        </label>
+        <label>
+          Taksa (opciono)
+          <input type="number" id="companyTax" step="0.01" min="0" />
+        </label>
+        <label>
+          Kolona za unos novog broja kamiona
+          <select id="companyEntryColumn">
+            <option value="start">S — Start</option>
+            <option value="basic">B — Basic</option>
+            <option value="advanced" selected>A — Advanced</option>
+          </select>
+        </label>
+        <label>
+          Besplatan period do / naplata od
+          <input type="date" id="companyBillingStartsOn" />
+        </label>
+        <label>
+          Napomene
+          <textarea id="companyNotes" rows="3"></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelCompanyBtn" class="btn">Otkaži</button>
+          <button type="submit" class="btn btn-primary">Sačuvaj</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
