@@ -8,11 +8,59 @@
 </head>
 <body>
   <nav class="page-nav">
-    <button id="navOverview" class="page-nav-btn is-active">Pregled kamiona</button>
+    <button id="navHome" class="page-nav-btn is-active">Početna</button>
+    <button id="navOverview" class="page-nav-btn">Pregled kamiona</button>
     <button id="navReports" class="page-nav-btn">Izveštaj</button>
+    <button id="navNaplata" class="page-nav-btn">Naplata</button>
+    <button id="navOrders" class="page-nav-btn">Porudžbine</button>
+    <button id="navStock" class="page-nav-btn">Stanje uređaja</button>
+    <button id="navSettings" class="page-nav-btn">Podešavanja</button>
   </nav>
 
-  <div id="pageOverview">
+  <div id="pageHome">
+    <header class="topbar home-topbar">
+      <h1>Početna</h1>
+    </header>
+
+    <main class="home-content">
+      <div class="home-stats-grid">
+        <div class="home-stat-card home-stat-card-blue">
+          <div class="home-stat-label">Uređaja na početku meseca</div>
+          <div class="home-stat-value" id="homeStatMonthStart">—</div>
+        </div>
+        <div class="home-stat-card home-stat-card-accent">
+          <div class="home-stat-label">Uređaja danas</div>
+          <div class="home-stat-value" id="homeStatToday">—</div>
+        </div>
+        <div id="homeStockCards" class="home-desktop-only"></div>
+      </div>
+
+      <div class="home-action-buttons home-mobile-only">
+        <button type="button" id="homeDailyReportBtn" class="home-action-btn">
+          <span class="home-action-icon">📋</span>
+          <span class="home-action-label">Dnevni izveštaj</span>
+        </button>
+        <button type="button" id="homeStockBtn" class="home-action-btn">
+          <span class="home-action-icon">📦</span>
+          <span class="home-action-label">Stanje uređaja</span>
+        </button>
+      </div>
+
+      <div class="home-columns home-desktop-only">
+        <section class="home-panel">
+          <h2>Poslednjih 5 naplata</h2>
+          <div id="homeRecentNaplata" class="home-recent-list"></div>
+        </section>
+
+        <section class="home-panel">
+          <h2>Poslednjih 5 porudžbina</h2>
+          <div id="homeRecentOrders" class="home-recent-list"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="pageOverview" hidden>
     <header class="topbar">
       <h1>VRH/RST Pregled kamiona</h1>
 
@@ -37,6 +85,7 @@
       </div>
 
       <div class="actions">
+        <button id="syncBtn" class="btn" title="Ručno povuci ELD podatke za danas, ako automatska sinhronizacija u 15h nije uspela">Sinhronizuj sada</button>
         <button id="importBtn" class="btn">Uvoz iz Excela</button>
         <input type="file" id="importFile" accept=".xlsx,.xls,.csv" hidden />
       </div>
@@ -46,6 +95,7 @@
       <span class="legend-item"><span class="swatch swatch-red"></span> T — prvi dan kad je dostignut mesečni maksimum</span>
       <span class="legend-item"><span class="swatch swatch-orange"></span> A — dodato kamiona na dan mesečnog maksimuma</span>
       <span class="legend-item"><span class="swatch swatch-green"></span> A — dodato kamiona, ali nije mesečni maksimum</span>
+      <span class="legend-item"><span class="swatch swatch-weekend"></span> T — vikend, broj preneto sa petka (nije nova sinhronizacija)</span>
       <span class="legend-item">T = Total, S = Start, B = Basic, A = Advanced — kolona za unos se bira po firmi (desni klik), podrazumevano A</span>
       <span class="legend-item">Crveno na T označava i dan kad besplatan period ističe; tokom free perioda nema markiranja</span>
     </div>
@@ -80,6 +130,475 @@
     </header>
 
     <main id="reportContent" class="report-content"></main>
+  </div>
+
+  <div id="pageNaplata" hidden>
+    <header class="topbar">
+      <h1>Naplata</h1>
+
+      <div class="naplata-tabs">
+        <button id="naplataTabActive" class="naplata-tab is-active">Aktivan</button>
+        <button id="naplataTabClosed" class="naplata-tab">Zatvoreno</button>
+      </div>
+    </header>
+
+    <div class="naplata-layout">
+      <main class="table-wrap naplata-main">
+        <table id="naplataTable" class="grid naplata-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Datum</th>
+              <th>Broj računa</th>
+              <th>Kompanija</th>
+              <th>Ciklus</th>
+              <th>Iznos</th>
+              <th>Način naplate</th>
+              <th>Datum naplate</th>
+              <th>Naplaćeno</th>
+              <th>Komentar</th>
+              <th>All check</th>
+              <th>Zatvoreno</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="naplataBody"></tbody>
+        </table>
+        <p id="naplataEmptyState" class="empty-state" hidden>Nema stavki.</p>
+      </main>
+
+      <aside class="naplata-sidebar">
+        <div class="naplata-sidebar-section">
+          <h3>Akcije</h3>
+          <div class="naplata-sidebar-actions">
+            <button id="naplataAddBtn" class="btn btn-primary">+ Nova naplata</button>
+            <button id="naplataImportBtn" class="btn" title="Jednokratni uvoz istorije iz Excel tabele Naplata">Uvoz istorije iz Excela</button>
+            <input type="file" id="naplataImportFile" accept=".xlsx,.xls" hidden />
+          </div>
+        </div>
+
+        <div class="naplata-sidebar-section">
+          <h3>Mesečna statistika</h3>
+          <label class="naplata-stats-month-label">
+            Mesec
+            <select id="naplataStatsMonth"></select>
+          </label>
+          <div class="naplata-stats">
+            <div class="naplata-stat-row">
+              <span>Nije naplaćeno</span>
+              <strong id="naplataStatNotCollected">0.00</strong>
+            </div>
+            <div class="naplata-stat-row">
+              <span>Naplaćeno</span>
+              <strong id="naplataStatCollected">0.00</strong>
+            </div>
+            <div class="naplata-stat-row">
+              <span>Zatvoreno</span>
+              <strong id="naplataStatClosed">0.00</strong>
+            </div>
+            <div class="naplata-stat-row naplata-stat-total">
+              <span>Ukupno</span>
+              <strong id="naplataStatTotal">0.00</strong>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="pageOrders" hidden>
+    <header class="topbar">
+      <h1>Porudžbine</h1>
+
+      <div class="filters">
+        <input type="text" id="ordersSearchInput" class="search-input" placeholder="Pretraga firme..." />
+      </div>
+
+      <div class="actions">
+        <button id="ordersAddBtn" class="btn btn-primary">+ Nova porudžbina</button>
+        <button id="ordersImportBtn" class="btn" title="Jednokratni uvoz istorije iz Orders.xlsx">Uvoz iz Orders.xlsx</button>
+        <input type="file" id="ordersImportFile" accept=".xlsx,.xls" hidden />
+      </div>
+    </header>
+
+    <main class="table-wrap">
+      <table id="ordersTable" class="grid orders-table">
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>QB Invoice</th>
+            <th>Woo-commerce</th>
+            <th>Naziv</th>
+            <th>Šta je poručeno</th>
+            <th>Ukupno</th>
+            <th>Datum slanja</th>
+            <th class="orders-compact-col">Način isporuke</th>
+            <th class="orders-compact-col">Status fakture</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="ordersBody"></tbody>
+      </table>
+      <p id="ordersEmptyState" class="empty-state" hidden>Nema porudžbina.</p>
+    </main>
+  </div>
+
+  <!-- Modal: detalji porudžbine -->
+  <div id="orderDetailModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2>Detalji porudžbine</h2>
+      <p id="orderDetailSubtitle" class="modal-subtitle"></p>
+      <dl id="orderDetailList" class="order-detail-list"></dl>
+      <div class="modal-actions">
+        <button type="button" id="closeOrderDetailBtn" class="btn">Zatvori</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: nova porudžbina -->
+  <div id="newOrderModal" class="modal-overlay" hidden>
+    <div class="modal modal-xwide">
+      <h2 id="newOrderModalTitle">Nova porudžbina</h2>
+      <form id="newOrderForm">
+        <div class="order-form-columns">
+          <div class="order-form-col order-form-col-main">
+            <div class="form-grid-2">
+              <label>
+                Firma
+                <input type="text" id="newOrderCompany" list="newOrderCompanyOptions" placeholder="Počni da kucaš naziv firme..." autocomplete="off" required />
+                <datalist id="newOrderCompanyOptions"></datalist>
+              </label>
+              <label>
+                Datum
+                <input type="date" id="newOrderDate" />
+              </label>
+              <label>
+                QB Invoice #
+                <input type="text" id="newOrderQbInvoice" />
+              </label>
+              <label>
+                Woo-commerce broj
+                <input type="text" id="newOrderWoo" />
+              </label>
+              <label>
+                Način isporuke
+                <input type="text" id="newOrderShipmentType" list="newOrderShipmentOptions" />
+                <datalist id="newOrderShipmentOptions">
+                  <option value="Client Pick Up"></option>
+                  <option value="Regular USPS"></option>
+                  <option value="Expedite USPS"></option>
+                  <option value="Delivery in IL"></option>
+                  <option value="Uber Delivery in IL"></option>
+                  <option value="Uber Delivery"></option>
+                  <option value="FedEx Prepaid"></option>
+                  <option value="Expedite FedEx"></option>
+                </datalist>
+              </label>
+              <label>
+                Status fakture
+                <input type="text" id="newOrderInvoiceStatus" list="newOrderStatusOptions" />
+                <datalist id="newOrderStatusOptions">
+                  <option value="Paid by ACH"></option>
+                  <option value="Paid by web store"></option>
+                  <option value="Paid by Credit Card"></option>
+                  <option value="Paid by Zelle"></option>
+                  <option value="Paid"></option>
+                  <option value="No payment required"></option>
+                  <option value="Invoice sent"></option>
+                  <option value="Cancelled"></option>
+                </datalist>
+              </label>
+              <label>
+                Datum slanja
+                <input type="date" id="newOrderShippingDate" />
+              </label>
+            </div>
+
+            <div class="new-order-items-section">
+              <div class="new-order-items-header">
+                <span>Šta je poručeno</span>
+                <button type="button" id="newOrderAddItemBtn" class="btn btn-icon" title="Dodaj artikal">+</button>
+              </div>
+              <div id="newOrderItemsList" class="new-order-items-list"></div>
+            </div>
+
+            <label>
+              Ukupno
+              <input type="number" id="newOrderAmount" step="0.01" min="0" />
+            </label>
+          </div>
+
+          <div class="order-form-col order-form-col-details">
+            <h3>Dodatni detalji</h3>
+            <div class="form-grid-2">
+              <label>
+                Ovlašćeno lice
+                <input type="text" id="newOrderContactName" />
+              </label>
+              <label>
+                Telefon
+                <input type="text" id="newOrderPhone" />
+              </label>
+              <label>
+                Email
+                <input type="text" id="newOrderEmail" />
+              </label>
+              <label>
+                Tip kupca
+                <input type="text" id="newOrderCustomerType" />
+              </label>
+              <label>
+                Serijski broj
+                <input type="text" id="newOrderSerialNumber" />
+              </label>
+              <label>
+                Papirologija
+                <input type="text" id="newOrderPaperwork" />
+              </label>
+              <label>
+                Odeljenje za dostavu
+                <input type="text" id="newOrderShippingDept" />
+              </label>
+              <label>
+                USPS tracking broj
+                <input type="text" id="newOrderTrackingNumber" />
+              </label>
+              <label>
+                Email potvrda
+                <input type="text" id="newOrderEmailConfirmation" />
+              </label>
+            </div>
+            <label>
+              Adresa
+              <input type="text" id="newOrderAddress" />
+            </label>
+            <label>
+              Napomene
+              <textarea id="newOrderNotes" rows="3"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelNewOrderBtn" class="btn">Otkaži</button>
+          <button type="submit" class="btn btn-primary">Sačuvaj</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="pageStock" hidden>
+    <header class="topbar">
+      <h1>Stanje uređaja</h1>
+      <div class="actions">
+        <button id="stockAddBtn" class="btn btn-primary">+ Dodaj</button>
+      </div>
+    </header>
+
+    <main class="stock-page-content">
+      <div id="stockDeviceSections"></div>
+
+      <section class="stock-connectors-section">
+        <h2>Konektori</h2>
+        <ul id="stockConnectorsList" class="settings-item-list"></ul>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: informativni pregled stanja uređaja (dugme na Početnoj, mobilna verzija) -->
+  <div id="homeStockModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2>Stanje uređaja</h2>
+      <div id="homeStockModalList" class="home-stock-modal-list"></div>
+      <div class="modal-actions">
+        <button type="button" id="homeStockModalCloseBtn" class="btn">Zatvori</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: dodaj na stanje (ručno ili preko slike/OCR, može više slika) -->
+  <div id="stockAddModal" class="modal-overlay" hidden>
+    <div class="modal modal-wide">
+      <h2>Dodaj na stanje</h2>
+      <label class="stock-modal-product-label">
+        Uređaj
+        <select id="stockDeviceProduct"></select>
+      </label>
+
+      <div class="stock-modal-manual">
+        <input type="text" id="stockDeviceSerial" placeholder="Serijski broj (ručno, jedan po jedan)" />
+        <button type="button" id="stockDeviceAddBtn" class="btn">Dodaj ovaj</button>
+      </div>
+
+      <div class="stock-modal-divider">ili</div>
+
+      <label class="btn stock-upload-btn">
+        📷 Učitaj sliku/slike (može više odjednom)
+        <input type="file" id="stockOcrFile" accept="image/*" capture="environment" multiple hidden />
+      </label>
+      <div id="stockOcrStatus" class="section-hint"></div>
+      <div id="stockOcrPreviews" class="stock-ocr-previews"></div>
+      <div id="stockOcrResult" class="stock-ocr-result" hidden>
+        <label>
+          Pročitan tekst (sirovo, radi provere)
+          <textarea id="stockOcrRawText" rows="3" readonly></textarea>
+        </label>
+        <div class="section-hint">Pronađeni mogući serijski brojevi — otštikliraj/ispravi pre dodavanja:</div>
+        <div id="stockOcrCandidates" class="stock-ocr-candidates"></div>
+        <button type="button" id="stockOcrConfirmBtn" class="btn btn-primary">Dodaj izabrane</button>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="stockModalCloseBtn" class="btn">Zatvori</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pageSettings" hidden>
+    <header class="topbar">
+      <h1>Podešavanja</h1>
+    </header>
+
+    <div class="settings-layout">
+      <nav class="settings-menu">
+        <div class="settings-menu-heading">Proizvodi</div>
+        <button id="settingsMenuDevices" class="settings-menu-item is-active">Uređaji</button>
+        <button id="settingsMenuConnectors" class="settings-menu-item">Konektori</button>
+
+        <div class="settings-menu-heading">Firme</div>
+        <button id="settingsMenuCompanies" class="settings-menu-item">Kompanije</button>
+        <button id="settingsMenuCompanyPrices" class="settings-menu-item">Kompanije cene</button>
+      </nav>
+
+      <main class="settings-content">
+        <section id="settingsSectionDevices" class="settings-section">
+          <h2>Uređaji</h2>
+          <ul id="settingsDeviceList" class="settings-item-list"></ul>
+          <form id="settingsDeviceForm" class="settings-add-form">
+            <input type="text" id="settingsDeviceInput" placeholder="Novi uređaj (npr. PT50)" />
+            <button type="submit" class="btn btn-primary">Dodaj</button>
+          </form>
+        </section>
+
+        <section id="settingsSectionConnectors" class="settings-section" hidden>
+          <h2>Konektori</h2>
+          <ul id="settingsConnectorList" class="settings-item-list"></ul>
+          <form id="settingsConnectorForm" class="settings-add-form">
+            <input type="text" id="settingsConnectorInput" placeholder="Novi konektor (npr. 9PIN)" />
+            <button type="submit" class="btn btn-primary">Dodaj</button>
+          </form>
+        </section>
+
+        <section id="settingsSectionCompanies" class="settings-section settings-section-wide" hidden>
+          <h2>Kompanije</h2>
+          <div class="settings-companies-toolbar">
+            <input type="text" id="settingsCompanySearch" class="search-input" placeholder="Pretraga firme..." />
+            <button id="settingsCompanyImportBtn" class="btn" title="Uvoz ovlašćenog lica, adrese i cena iz Orders.xlsx (samo tačna poklapanja imena firme)">Uvoz iz Orders.xlsx</button>
+            <input type="file" id="settingsCompanyImportFile" accept=".xlsx,.xls" hidden />
+          </div>
+          <div class="table-wrap settings-companies-table-wrap">
+            <table id="settingsCompaniesTable" class="grid">
+              <thead>
+                <tr id="settingsCompaniesHeadRow"></tr>
+              </thead>
+              <tbody id="settingsCompaniesBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="settingsSectionCompanyPrices" class="settings-section settings-section-wide" hidden>
+          <h2>Kompanije cene</h2>
+          <p class="settings-section-hint">
+            Istorijski cenovnik — samo za referencu. Popunjava se uvozom iz Billing count control.xlsx
+            i automatski kad se cena firme promeni u Pregled kamiona. Ovde se ništa ne menja ručno.
+          </p>
+          <div class="settings-companies-toolbar">
+            <input type="text" id="settingsCompanyPriceSearch" class="search-input" placeholder="Pretraga firme..." />
+            <button id="settingsCompanyPriceImportBtn" class="btn" title="Uvoz istorijskih cena iz Billing count control.xlsx">Uvoz iz Billing count control.xlsx</button>
+            <input type="file" id="settingsCompanyPriceImportFile" accept=".xlsx,.xls" hidden />
+          </div>
+          <div class="table-wrap settings-companies-table-wrap">
+            <table id="settingsCompanyPricesTable" class="grid">
+              <thead>
+                <tr>
+                  <th>Naziv</th>
+                  <th>Cena</th>
+                  <th>Ažurirano</th>
+                </tr>
+              </thead>
+              <tbody id="settingsCompanyPricesBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal: izmena/nova stavka naplate -->
+  <div id="naplataModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2 id="naplataModalTitle">Izmena naplate</h2>
+      <p id="naplataModalSubtitle" class="modal-subtitle"></p>
+      <form id="naplataForm">
+        <label id="naplataCompanyLabel">
+          Firma
+          <input type="text" id="naplataCompany" list="naplataCompanyOptions" placeholder="Počni da kucaš naziv firme..." autocomplete="off" />
+          <datalist id="naplataCompanyOptions"></datalist>
+        </label>
+        <label>
+          Datum
+          <input type="date" id="naplataDate" required />
+        </label>
+        <label>
+          Ciklus
+          <select id="naplataCycle">
+            <option value="current">Current</option>
+            <option value="behind">Behind</option>
+          </select>
+        </label>
+        <label>
+          Iznos
+          <input type="number" id="naplataAmount" step="0.01" min="0" required />
+        </label>
+        <label>
+          Broj računa
+          <input type="text" id="naplataInvoiceNumber" />
+        </label>
+        <label>
+          Način naplate
+          <input type="text" id="naplataPaymentMethod" list="naplataPaymentMethodOptions" />
+          <datalist id="naplataPaymentMethodOptions">
+            <option value="ACB&amp;T"></option>
+            <option value="QB - CreditCard pay."></option>
+            <option value="Paid by webstore"></option>
+            <option value="Client pays himself"></option>
+            <option value="BOA - Zelle"></option>
+          </datalist>
+        </label>
+        <label>
+          Naplaćeno
+          <select id="naplataCollected">
+            <option value="">— Nije odlučeno</option>
+            <option value="yes">Da</option>
+            <option value="no">Ne</option>
+          </select>
+        </label>
+        <label>
+          Datum naplate
+          <input type="date" id="naplataCollectionDate" />
+        </label>
+        <label>
+          Komentar
+          <textarea id="naplataComment" rows="3"></textarea>
+        </label>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelNaplataBtn" class="btn">Otkaži</button>
+          <button type="submit" class="btn btn-primary">Sačuvaj</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <!-- Modal: izmena firme (desni klik na naziv) ili nova firma iz API-ja -->
