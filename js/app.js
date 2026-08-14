@@ -1292,13 +1292,18 @@ function showPage(page) {
   if (page === "reports" && !el.reportContent.dataset.rendered) {
     runReport();
   }
-  if (page === "naplata" && !state.naplataLoaded) {
+  // "|| .length === 0" - ne samo "nije još učitano": ako je prvi pokušaj
+  // (npr. odmah posle logina) iz bilo kog razloga vratio praznu listu, sam
+  // "loaded" flag bi ostao zauvek true i sprečio svaki naredni pokušaj bez
+  // punog refresh-a stranice (koji resetuje JS state). Ovako se samoispravi
+  // čim se stranica ponovo otvori.
+  if (page === "naplata" && (!state.naplataLoaded || state.naplata.length === 0)) {
     loadNaplata().then(afterNaplataLoad);
   }
   if (page === "naplata") {
     hideIfNoEdit("naplata", el.naplataAddBtn, el.naplataImportBtn);
   }
-  if (page === "orders" && !state.ordersLoaded) {
+  if (page === "orders" && (!state.ordersLoaded || state.orders.length === 0)) {
     Promise.all([loadOrders(), loadOrderItems(), state.productsLoaded ? Promise.resolve() : loadProducts()]).then(
       renderOrders
     );
@@ -2185,7 +2190,13 @@ async function generateDailyReport(dateValue) {
   // detailed pricing: current-status companies whose total set a new
   // all-time record today — see computeCurrentDetailRows().
   const remainingDays = nDays - day + 1;
-  const detailRows = computeCurrentDetailRows(counts, companies, year, month, day);
+  // Sortirano VRH-VRH pa RST-RST (umesto naizmenično, kako companies dođe iz
+  // baze) - stabilan sort, ne menja redosled unutar svake grupe.
+  const detailRows = computeCurrentDetailRows(counts, companies, year, month, day).sort((a, b) => {
+    const aRst = a.company.eld_group === "RST" ? 1 : 0;
+    const bRst = b.company.eld_group === "RST" ? 1 : 0;
+    return aRst - bRst;
+  });
   const grandTotal = detailRows.reduce((acc, r) => acc + r.amount, 0);
 
   // ---- render ----
@@ -4724,10 +4735,13 @@ async function loadHomeDashboard() {
   const desktop = isDesktopViewport();
   const need = [];
   if (desktop) {
-    if (!state.naplataLoaded) need.push(loadNaplata());
-    if (!state.ordersLoaded) need.push(Promise.all([loadOrders(), loadOrderItems()]));
-    if (!state.productsLoaded) need.push(loadProducts());
-    if (!state.deviceUnitsLoaded) need.push(loadDeviceUnits());
+    // "|| .length === 0" - vidi napomenu uz isti obrazac u showPage(): samo
+    // "loaded" flag bi ostao zauvek true ako prvi pokušaj vrati praznu
+    // listu, i sprečio svaki naredni pokušaj bez punog refresh-a stranice.
+    if (!state.naplataLoaded || state.naplata.length === 0) need.push(loadNaplata());
+    if (!state.ordersLoaded || state.orders.length === 0) need.push(Promise.all([loadOrders(), loadOrderItems()]));
+    if (!state.productsLoaded || state.products.length === 0) need.push(loadProducts());
+    if (!state.deviceUnitsLoaded || state.deviceUnits.length === 0) need.push(loadDeviceUnits());
   }
 
   const [truckStats] = await Promise.all([computeHomeTruckStats(), ...need]);
