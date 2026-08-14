@@ -2218,7 +2218,10 @@ async function generateDailyReport(dateValue) {
   totalsRow.appendChild(grandCard);
   el.reportContent.appendChild(totalsRow);
 
-  const addedSection = el_("section", "report-section");
+  // Desktop: dve sekcije (Dodati / Uklonjeni), svaka sa VRH|RST kolonama
+  // jedna pored druge. Na mobilnoj je preglednije obrnuto grupisano - prvo
+  // sve za VRH (dodato+uklonjeno), pa sve za RST - vidi mobileGroups ispod.
+  const addedSection = el_("section", "report-section home-desktop-only");
   addedSection.appendChild(el_("h2", null, "Dodati uređaji"));
   const addedCols = el_("div", "report-columns");
   const vrhAddedGroup = el_("div", "report-group group-vrh");
@@ -2232,7 +2235,7 @@ async function generateDailyReport(dateValue) {
   addedSection.appendChild(addedCols);
   el.reportContent.appendChild(addedSection);
 
-  const removedSection = el_("section", "report-section");
+  const removedSection = el_("section", "report-section home-desktop-only");
   removedSection.appendChild(el_("h2", null, "Uklonjeni uređaji"));
   const removedCols = el_("div", "report-columns");
   const vrhRemovedGroup = el_("div", "report-group group-vrh");
@@ -2249,6 +2252,23 @@ async function generateDailyReport(dateValue) {
   removedCols.appendChild(rstRemovedGroup);
   removedSection.appendChild(removedCols);
   el.reportContent.appendChild(removedSection);
+
+  const mobileGroups = el_("div", "home-mobile-only daily-mobile-groups");
+  for (const [label, addedList, removedList, netClass] of [
+    ["VRH", vrhAdded, vrhRemoved, "net-vrh"],
+    ["RST", rstAdded, rstRemoved, "net-rst"],
+  ]) {
+    const group = el_("section", "report-section group-" + label.toLowerCase());
+    group.appendChild(el_("h2", null, label));
+    group.appendChild(el_("h3", null, "Dodati uređaji"));
+    group.appendChild(buildReportList(addedList, "+", "Ukupno dodato"));
+    group.appendChild(el_("h3", null, "Uklonjeni uređaji"));
+    const removedListEl = buildReportList(removedList, "−", "Ukupno uklonjeno");
+    appendNetRow(removedListEl, sumValues(addedList) - sumValues(removedList), netClass);
+    group.appendChild(removedListEl);
+    mobileGroups.appendChild(group);
+  }
+  el.reportContent.appendChild(mobileGroups);
 
   const detailSection = el_("section", "report-section");
   detailSection.appendChild(el_("h2", null, "Detaljan prikaz (current)"));
