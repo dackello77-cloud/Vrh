@@ -1813,38 +1813,19 @@ table.orders-table th, table.orders-table td {
   font-variant-numeric: tabular-nums;
 }
 
-.home-action-buttons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.home-action-btn {
+/* Dnevni izveštaj/Stanje uređaja dugmad na mobilnoj: iste pločice kao
+   home-stat-card (boja + zaobljeni uglovi), samo klikabilne. Element+klasa
+   selektor (ne samo .home-tile-btn) da pobedi .home-mobile-only-ovo
+   "display: grid" iz mobilnog media query-ja bez obzira na redosled u fajlu. */
+button.home-tile-btn {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 28px 16px;
+  text-align: center;
+  width: 100%;
+  border: none;
   cursor: pointer;
   font: inherit;
-  color: var(--text);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-}
-
-.home-action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-  border-color: var(--accent);
-}
-
-.home-action-icon {
-  font-size: 32px;
-  line-height: 1;
 }
 
 .home-action-label {
@@ -2037,20 +2018,46 @@ table.orders-table th, table.orders-table td {
     font-size: 22px;
   }
 
-  .home-action-buttons {
-    gap: 10px;
-  }
-
-  .home-action-btn {
-    padding: 20px 12px;
-  }
-
-  .home-action-icon {
-    font-size: 26px;
-  }
-
   .home-action-label {
     font-size: 12px;
     text-align: center;
+  }
+
+  .home-tile-btn {
+    min-height: 90px;
+  }
+
+  /* Sve 4 pločice na Početnoj pune boje (ne samo obojena ivica kao na
+     desktopu) da svaka jasno bude druge boje. */
+  .home-stat-card-blue {
+    background: linear-gradient(135deg, var(--report-blue), #12325c);
+    border-color: var(--report-blue);
+  }
+  .home-stat-card-blue .home-stat-label,
+  .home-stat-card-blue .home-stat-value {
+    color: #fff;
+  }
+
+  /* "Uređaja danas" je inače isto plava (--accent) kao prva kartica - na
+     mobilnoj je zelena da sve 4 pločice budu jasno različite boje. */
+  .home-stat-card-accent {
+    background: linear-gradient(135deg, var(--report-green), #14532d);
+    border-color: var(--report-green);
+  }
+
+  .home-stat-card-orange {
+    background: linear-gradient(135deg, var(--report-rst), #8a4a06);
+    border-color: var(--report-rst);
+  }
+  .home-stat-card-orange .home-action-label {
+    color: #fff;
+  }
+
+  .home-stat-card-purple {
+    background: linear-gradient(135deg, #7c3aed, #4c1d95);
+    border-color: #7c3aed;
+  }
+  .home-stat-card-purple .home-action-label {
+    color: #fff;
   }
 }
