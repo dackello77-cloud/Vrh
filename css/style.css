@@ -341,12 +341,12 @@ body {
   font-size: 13px;
 }
 
-.report-group.group-vrh h3 { color: var(--report-vrh); }
+.report-group.group-vrh h2, .report-group.group-vrh h3 { color: var(--report-vrh); }
 .report-group.group-vrh .report-list { border-color: var(--report-vrh); }
 .report-group.group-vrh .report-list li { background: var(--report-vrh-light); }
 .report-group.group-vrh .report-list li.report-list-total { background: var(--report-vrh); color: #fff; }
 
-.report-group.group-rst h3 { color: var(--report-rst); }
+.report-group.group-rst h2, .report-group.group-rst h3 { color: var(--report-rst); }
 .report-group.group-rst .report-list { border-color: var(--report-rst); }
 .report-group.group-rst .report-list li { background: var(--report-rst-light); }
 .report-group.group-rst .report-list li.report-list-total { background: var(--report-rst); color: #fff; }

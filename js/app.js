@@ -2258,7 +2258,7 @@ async function generateDailyReport(dateValue) {
     ["VRH", vrhAdded, vrhRemoved, "net-vrh"],
     ["RST", rstAdded, rstRemoved, "net-rst"],
   ]) {
-    const group = el_("section", "report-section group-" + label.toLowerCase());
+    const group = el_("section", `report-section report-group group-${label.toLowerCase()}`);
     group.appendChild(el_("h2", null, label));
     group.appendChild(el_("h3", null, "Dodati uređaji"));
     group.appendChild(buildReportList(addedList, "+", "Ukupno dodato"));
