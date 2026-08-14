@@ -1289,26 +1289,20 @@ function showPage(page) {
     requestAnimationFrame(scrollToToday);
     hideIfNoEdit("overview", el.importBtn, el.syncBtn);
   }
-  if (page === "reports" && !el.reportContent.dataset.rendered) {
+  // Naplata/Porudžbine/Izveštaj se ponovo učitavaju/generišu SVAKI PUT kad
+  // se strana otvori (bez "već učitano" zaštite) - namerno, da ne postoji
+  // nijedan slučaj u kom bi zaglavljena zastavica iz jednog neuspešnog
+  // pokušaja (npr. tranzijentna greška odmah posle logina) sprečila prikaz
+  // bez punog refresh-a stranice.
+  if (page === "reports") {
     runReport();
   }
-  // "|| .length === 0" - ne samo "nije još učitano": ako je prvi pokušaj
-  // (npr. odmah posle logina) iz bilo kog razloga vratio praznu listu, sam
-  // "loaded" flag bi ostao zauvek true i sprečio svaki naredni pokušaj bez
-  // punog refresh-a stranice (koji resetuje JS state). Ovako se samoispravi
-  // čim se stranica ponovo otvori.
-  if (page === "naplata" && (!state.naplataLoaded || state.naplata.length === 0)) {
-    loadNaplata().then(afterNaplataLoad);
-  }
   if (page === "naplata") {
+    loadNaplata().then(afterNaplataLoad);
     hideIfNoEdit("naplata", el.naplataAddBtn, el.naplataImportBtn);
   }
-  if (page === "orders" && (!state.ordersLoaded || state.orders.length === 0)) {
-    Promise.all([loadOrders(), loadOrderItems(), state.productsLoaded ? Promise.resolve() : loadProducts()]).then(
-      renderOrders
-    );
-  }
   if (page === "orders") {
+    Promise.all([loadOrders(), loadOrderItems(), loadProducts()]).then(renderOrders);
     hideIfNoEdit("orders", el.ordersAddBtn, el.ordersImportBtn);
   }
   if (page === "stock") {
