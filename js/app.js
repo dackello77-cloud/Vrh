@@ -4320,15 +4320,23 @@ function renderStockConnectors() {
   const connectors = state.products.filter((p) => p.type === "connector");
   el.stockConnectorsList.innerHTML = "";
   if (connectors.length === 0) {
-    el.stockConnectorsList.appendChild(el_("li", "empty", "Nema konektora u katalogu"));
+    el.stockConnectorsList.appendChild(el_("div", "section-hint", "Nema konektora u katalogu"));
     return;
   }
   for (const p of connectors) {
-    const li = document.createElement("li");
-    li.appendChild(el_("span", null, `${p.name} — na stanju: ${p.stock_quantity ?? 0}`));
+    const section = document.createElement("div");
+    section.className = "stock-device-type-section";
+
+    const header = document.createElement("div");
+    header.className = "stock-type-header";
+    header.appendChild(el_("div", "stock-type-name", p.name));
+    header.appendChild(el_("div", "stock-type-count", String(p.stock_quantity ?? 0)));
+    header.appendChild(el_("div", "stock-type-sublabel", "na stanju"));
+    section.appendChild(header);
 
     if (canEdit("stock")) {
-      const controls = el_("span", "stock-connector-controls");
+      const controls = document.createElement("div");
+      controls.className = "stock-connector-controls";
       const input = document.createElement("input");
       input.type = "number";
       input.step = "1";
@@ -4344,9 +4352,10 @@ function renderStockConnectors() {
       });
       controls.appendChild(input);
       controls.appendChild(applyBtn);
-      li.appendChild(controls);
+      section.appendChild(controls);
     }
-    el.stockConnectorsList.appendChild(li);
+
+    el.stockConnectorsList.appendChild(section);
   }
 }
 

@@ -1966,11 +1966,12 @@ table.orders-table th, table.orders-table td {
     display: grid;
   }
 
-  /* Stanje uređaja: samo pregled na mobilnom, bez dodavanja/brisanja */
+  /* Stanje uređaja: samo pregled na mobilnom - bez dodavanja/brisanja, bez
+     serijskih brojeva/statusa (samo naziv + broj na stanju), bez +/- unosa
+     kod konektora. */
   #stockAddBtn,
-  .stock-device-type-table .icon-btn,
-  .stock-device-type-table th:last-child,
-  .stock-device-type-table td:last-child {
+  .stock-device-type-section .table-wrap,
+  .stock-connector-controls {
     display: none;
   }
 
