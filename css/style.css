@@ -1253,6 +1253,12 @@ table.naplata-table input[type="checkbox"]:disabled {
   justify-content: center;
 }
 
+.settings-product-row-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-add-form {
   display: flex;
   gap: 8px;

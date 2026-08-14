@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>VRH — Kamioni</title>
-<link rel="stylesheet" href="css/style.css?v=20260814h" />
+<link rel="stylesheet" href="css/style.css?v=20260814i" />
 </head>
 <body>
   <div id="pageLogin" class="login-page" hidden>
@@ -422,31 +422,38 @@
     <div class="modal modal-wide">
       <h2>Dodaj na stanje</h2>
       <label class="stock-modal-product-label">
-        Uređaj
+        Proizvod
         <select id="stockDeviceProduct"></select>
       </label>
 
-      <div class="stock-modal-manual">
-        <input type="text" id="stockDeviceSerial" placeholder="Serijski broj (ručno, jedan po jedan)" />
-        <button type="button" id="stockDeviceAddBtn" class="btn">Dodaj ovaj</button>
+      <div id="stockDeviceAddSection">
+        <div class="stock-modal-manual">
+          <input type="text" id="stockDeviceSerial" placeholder="Serijski broj (ručno, jedan po jedan)" />
+          <button type="button" id="stockDeviceAddBtn" class="btn">Dodaj ovaj</button>
+        </div>
+
+        <div class="stock-modal-divider">ili</div>
+
+        <label class="btn stock-upload-btn">
+          📷 Učitaj sliku/slike (može više odjednom)
+          <input type="file" id="stockOcrFile" accept="image/*" capture="environment" multiple hidden />
+        </label>
+        <div id="stockOcrStatus" class="section-hint"></div>
+        <div id="stockOcrPreviews" class="stock-ocr-previews"></div>
+        <div id="stockOcrResult" class="stock-ocr-result" hidden>
+          <label>
+            Pročitan tekst (sirovo, radi provere)
+            <textarea id="stockOcrRawText" rows="3" readonly></textarea>
+          </label>
+          <div class="section-hint">Pronađeni mogući serijski brojevi — otštikliraj/ispravi pre dodavanja:</div>
+          <div id="stockOcrCandidates" class="stock-ocr-candidates"></div>
+          <button type="button" id="stockOcrConfirmBtn" class="btn btn-primary">Dodaj izabrane</button>
+        </div>
       </div>
 
-      <div class="stock-modal-divider">ili</div>
-
-      <label class="btn stock-upload-btn">
-        📷 Učitaj sliku/slike (može više odjednom)
-        <input type="file" id="stockOcrFile" accept="image/*" capture="environment" multiple hidden />
-      </label>
-      <div id="stockOcrStatus" class="section-hint"></div>
-      <div id="stockOcrPreviews" class="stock-ocr-previews"></div>
-      <div id="stockOcrResult" class="stock-ocr-result" hidden>
-        <label>
-          Pročitan tekst (sirovo, radi provere)
-          <textarea id="stockOcrRawText" rows="3" readonly></textarea>
-        </label>
-        <div class="section-hint">Pronađeni mogući serijski brojevi — otštikliraj/ispravi pre dodavanja:</div>
-        <div id="stockOcrCandidates" class="stock-ocr-candidates"></div>
-        <button type="button" id="stockOcrConfirmBtn" class="btn btn-primary">Dodaj izabrane</button>
+      <div id="stockConnectorAddSection" class="stock-modal-manual" hidden>
+        <input type="number" id="stockConnectorQtyInput" min="1" step="1" placeholder="Količina" />
+        <button type="button" id="stockConnectorQtyAddBtn" class="btn">Dodaj na stanje</button>
       </div>
 
       <div class="modal-actions">
@@ -463,8 +470,7 @@
     <div class="settings-layout">
       <nav class="settings-menu">
         <div class="settings-menu-heading">Proizvodi</div>
-        <button id="settingsMenuDevices" class="settings-menu-item is-active">Uređaji</button>
-        <button id="settingsMenuConnectors" class="settings-menu-item">Konektori</button>
+        <button id="settingsMenuProducts" class="settings-menu-item is-active">Svi proizvodi</button>
 
         <div class="settings-menu-heading">Firme</div>
         <button id="settingsMenuCompanies" class="settings-menu-item">Kompanije</button>
@@ -476,20 +482,15 @@
       </nav>
 
       <main class="settings-content">
-        <section id="settingsSectionDevices" class="settings-section">
-          <h2>Uređaji</h2>
-          <ul id="settingsDeviceList" class="settings-item-list"></ul>
-          <form id="settingsDeviceForm" class="settings-add-form">
-            <input type="text" id="settingsDeviceInput" placeholder="Novi uređaj (npr. PT50)" />
-            <button type="submit" class="btn btn-primary">Dodaj</button>
-          </form>
-        </section>
-
-        <section id="settingsSectionConnectors" class="settings-section" hidden>
-          <h2>Konektori</h2>
-          <ul id="settingsConnectorList" class="settings-item-list"></ul>
-          <form id="settingsConnectorForm" class="settings-add-form">
-            <input type="text" id="settingsConnectorInput" placeholder="Novi konektor (npr. 9PIN)" />
+        <section id="settingsSectionProducts" class="settings-section">
+          <h2>Proizvodi</h2>
+          <ul id="settingsProductList" class="settings-item-list"></ul>
+          <form id="settingsProductForm" class="settings-add-form">
+            <select id="settingsProductGroup">
+              <option value="device">Uređaj</option>
+              <option value="connector">Konektor</option>
+            </select>
+            <input type="text" id="settingsProductInput" placeholder="Naziv (npr. PT50 ili 9PIN)" />
             <button type="submit" class="btn btn-primary">Dodaj</button>
           </form>
         </section>
@@ -725,6 +726,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
-  <script type="module" src="js/app.js?v=20260814h"></script>
+  <script type="module" src="js/app.js?v=20260814i"></script>
 </body>
 </html>

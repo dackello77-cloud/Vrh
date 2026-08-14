@@ -186,16 +186,12 @@ const el = {
   cancelNewOrderBtn: document.getElementById("cancelNewOrderBtn"),
   pageSettings: document.getElementById("pageSettings"),
   navSettings: document.getElementById("navSettings"),
-  settingsMenuDevices: document.getElementById("settingsMenuDevices"),
-  settingsMenuConnectors: document.getElementById("settingsMenuConnectors"),
-  settingsSectionDevices: document.getElementById("settingsSectionDevices"),
-  settingsSectionConnectors: document.getElementById("settingsSectionConnectors"),
-  settingsDeviceList: document.getElementById("settingsDeviceList"),
-  settingsDeviceForm: document.getElementById("settingsDeviceForm"),
-  settingsDeviceInput: document.getElementById("settingsDeviceInput"),
-  settingsConnectorList: document.getElementById("settingsConnectorList"),
-  settingsConnectorForm: document.getElementById("settingsConnectorForm"),
-  settingsConnectorInput: document.getElementById("settingsConnectorInput"),
+  settingsMenuProducts: document.getElementById("settingsMenuProducts"),
+  settingsSectionProducts: document.getElementById("settingsSectionProducts"),
+  settingsProductList: document.getElementById("settingsProductList"),
+  settingsProductForm: document.getElementById("settingsProductForm"),
+  settingsProductGroup: document.getElementById("settingsProductGroup"),
+  settingsProductInput: document.getElementById("settingsProductInput"),
   settingsMenuCompanies: document.getElementById("settingsMenuCompanies"),
   settingsSectionCompanies: document.getElementById("settingsSectionCompanies"),
   settingsCompanySearch: document.getElementById("settingsCompanySearch"),
@@ -216,8 +212,12 @@ const el = {
   stockAddModal: document.getElementById("stockAddModal"),
   stockModalCloseBtn: document.getElementById("stockModalCloseBtn"),
   stockDeviceProduct: document.getElementById("stockDeviceProduct"),
+  stockDeviceAddSection: document.getElementById("stockDeviceAddSection"),
   stockDeviceSerial: document.getElementById("stockDeviceSerial"),
   stockDeviceAddBtn: document.getElementById("stockDeviceAddBtn"),
+  stockConnectorAddSection: document.getElementById("stockConnectorAddSection"),
+  stockConnectorQtyInput: document.getElementById("stockConnectorQtyInput"),
+  stockConnectorQtyAddBtn: document.getElementById("stockConnectorQtyAddBtn"),
   stockOcrFile: document.getElementById("stockOcrFile"),
   stockOcrStatus: document.getElementById("stockOcrStatus"),
   stockOcrPreviews: document.getElementById("stockOcrPreviews"),
@@ -1318,8 +1318,7 @@ function showPage(page) {
   if (page === "settings") {
     hideIfNoEdit(
       "settings",
-      el.settingsDeviceForm,
-      el.settingsConnectorForm,
+      el.settingsProductForm,
       el.settingsCompanyImportBtn,
       el.settingsCompanyPriceImportBtn,
       el.roleAddBtn,
@@ -3513,27 +3512,30 @@ async function loadProducts() {
   state.productsLoaded = true;
 }
 
-function renderProductList(listEl, items) {
-  listEl.innerHTML = "";
+function renderSettingsProducts() {
+  const items = state.products
+    .slice()
+    .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+  el.settingsProductList.innerHTML = "";
   if (items.length === 0) {
-    listEl.appendChild(el_("li", "empty", "Nema stavki"));
+    el.settingsProductList.appendChild(el_("li", "empty", "Nema stavki"));
     return;
   }
   for (const item of items) {
     const li = document.createElement("li");
-    li.appendChild(el_("span", null, item.name));
+    const left = el_("span", "settings-product-row-main");
+    left.appendChild(
+      el_("span", `badge ${item.type === "device" ? "badge-current" : "badge-neutral"}`, item.type === "device" ? "Uređaj" : "Konektor")
+    );
+    left.appendChild(el_("span", null, item.name));
+    li.appendChild(left);
     const delBtn = el_("button", "icon-btn", "×");
     delBtn.type = "button";
     delBtn.title = "Obriši";
     delBtn.addEventListener("click", () => deleteProduct(item.id));
     li.appendChild(delBtn);
-    listEl.appendChild(li);
+    el.settingsProductList.appendChild(li);
   }
-}
-
-function renderSettingsProducts() {
-  renderProductList(el.settingsDeviceList, state.products.filter((p) => p.type === "device"));
-  renderProductList(el.settingsConnectorList, state.products.filter((p) => p.type === "connector"));
 }
 
 async function addProduct(type, name) {
@@ -3558,20 +3560,12 @@ async function deleteProduct(id) {
   showToast("Obrisano");
 }
 
-el.settingsDeviceForm.addEventListener("submit", async (e) => {
+el.settingsProductForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const name = el.settingsDeviceInput.value.trim();
+  const name = el.settingsProductInput.value.trim();
   if (!name) return;
-  await addProduct("device", name);
-  el.settingsDeviceInput.value = "";
-});
-
-el.settingsConnectorForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const name = el.settingsConnectorInput.value.trim();
-  if (!name) return;
-  await addProduct("connector", name);
-  el.settingsConnectorInput.value = "";
+  await addProduct(el.settingsProductGroup.value, name);
+  el.settingsProductInput.value = "";
 });
 
 // ---------- podešavanja: kompanije (ovlašćeno lice, adresa, cena po proizvodu) ----------
@@ -4099,14 +4093,12 @@ el.settingsCompanyPriceImportFile.addEventListener("change", async () => {
 });
 
 function showSettingsSection(section) {
-  el.settingsSectionDevices.hidden = section !== "devices";
-  el.settingsSectionConnectors.hidden = section !== "connectors";
+  el.settingsSectionProducts.hidden = section !== "products";
   el.settingsSectionCompanies.hidden = section !== "companies";
   el.settingsSectionCompanyPrices.hidden = section !== "companyPrices";
   el.settingsSectionRoles.hidden = section !== "roles";
   el.settingsSectionUsers.hidden = section !== "users";
-  el.settingsMenuDevices.classList.toggle("is-active", section === "devices");
-  el.settingsMenuConnectors.classList.toggle("is-active", section === "connectors");
+  el.settingsMenuProducts.classList.toggle("is-active", section === "products");
   el.settingsMenuCompanies.classList.toggle("is-active", section === "companies");
   el.settingsMenuCompanyPrices.classList.toggle("is-active", section === "companyPrices");
   el.settingsMenuRoles.classList.toggle("is-active", section === "roles");
@@ -4119,10 +4111,15 @@ function showSettingsSection(section) {
       renderUsers();
     });
   }
-  if (section === "companies" && !state.companyPricesLoaded) {
-    Promise.all([state.productsLoaded ? Promise.resolve() : loadProducts(), loadCompanyPrices()]).then(
-      renderSettingsCompanies
-    );
+  if (section === "companies") {
+    // Uvek re-renderuj (state.products/companyPrices su već u memoriji ako su
+    // ranije učitani) - samo fetch treba da se preskoči kad je već svež, inače
+    // novododat proizvod iz Podešavanja > Proizvodi ne bi odmah dobio svoju
+    // kolonu ovde bez punog reload-a stranice.
+    const need = [];
+    if (!state.productsLoaded) need.push(loadProducts());
+    if (!state.companyPricesLoaded) need.push(loadCompanyPrices());
+    Promise.all(need).then(renderSettingsCompanies);
   }
   if (section === "companyPrices") {
     // companyPriceLookup se često već učita ranije (checkForNewCompanies pri
@@ -4137,8 +4134,7 @@ function showSettingsSection(section) {
   }
 }
 
-el.settingsMenuDevices.addEventListener("click", () => showSettingsSection("devices"));
-el.settingsMenuConnectors.addEventListener("click", () => showSettingsSection("connectors"));
+el.settingsMenuProducts.addEventListener("click", () => showSettingsSection("products"));
 el.settingsMenuCompanies.addEventListener("click", () => showSettingsSection("companies"));
 el.settingsMenuCompanyPrices.addEventListener("click", () => showSettingsSection("companyPrices"));
 el.settingsMenuRoles.addEventListener("click", () => showSettingsSection("roles"));
@@ -4168,11 +4164,37 @@ async function loadDeviceUnits() {
   state.deviceUnitsLoaded = true;
 }
 
-function populateDeviceProductSelect(selectEl) {
+// Select u "+ Dodaj" modalu obuhvata i uređaje i konektore (grupisano), da se
+// sa jednog mesta dodaje bilo šta na stanje — vidi syncStockModalProductType.
+function populateStockProductSelect(selectEl) {
   const prev = selectEl.value;
   selectEl.innerHTML = "";
-  for (const p of state.products.filter((x) => x.type === "device")) {
-    selectEl.appendChild(new Option(p.name, p.id));
+  const devices = state.products.filter((p) => p.type === "device");
+  const connectors = state.products.filter((p) => p.type === "connector");
+
+  if (devices.length) {
+    const group = document.createElement("optgroup");
+    group.label = "Uređaji";
+    for (const p of devices) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      opt.dataset.type = "device";
+      group.appendChild(opt);
+    }
+    selectEl.appendChild(group);
+  }
+  if (connectors.length) {
+    const group = document.createElement("optgroup");
+    group.label = "Konektori";
+    for (const p of connectors) {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name;
+      opt.dataset.type = "connector";
+      group.appendChild(opt);
+    }
+    selectEl.appendChild(group);
   }
   if (prev) selectEl.value = prev;
 }
@@ -4180,7 +4202,7 @@ function populateDeviceProductSelect(selectEl) {
 // Jedna sekcija po tipu uređaja (PT30, PT40, ...), jedna ispod druge, svaka
 // sa svojim brojem na stanju i svojim spiskom serijskih brojeva.
 function renderStockDevices() {
-  populateDeviceProductSelect(el.stockDeviceProduct);
+  populateStockProductSelect(el.stockDeviceProduct);
 
   const devices = state.products.filter((p) => p.type === "device");
   el.stockDeviceSections.innerHTML = "";
@@ -4283,9 +4305,22 @@ async function deleteDeviceUnit(id) {
   showToast("Obrisano");
 }
 
+// Prikazuje serijski-broj/OCR deo za uređaje, ili prosto polje za količinu
+// za konektore, zavisno od izabrane stavke u zajedničkom select-u.
+function syncStockModalProductType() {
+  const opt = el.stockDeviceProduct.selectedOptions[0];
+  const type = opt ? opt.dataset.type : "device";
+  el.stockDeviceAddSection.hidden = type !== "device";
+  el.stockConnectorAddSection.hidden = type !== "connector";
+}
+
+el.stockDeviceProduct.addEventListener("change", syncStockModalProductType);
+
 function openStockAddModal() {
-  populateDeviceProductSelect(el.stockDeviceProduct);
+  populateStockProductSelect(el.stockDeviceProduct);
+  syncStockModalProductType();
   el.stockDeviceSerial.value = "";
+  el.stockConnectorQtyInput.value = "";
   el.stockOcrFile.value = "";
   el.stockOcrStatus.textContent = "";
   el.stockOcrPreviews.innerHTML = "";
@@ -4297,6 +4332,7 @@ function openStockAddModal() {
 function closeStockAddModal() {
   el.stockAddModal.hidden = true;
   renderStockDevices();
+  renderStockConnectors();
 }
 
 el.stockAddBtn.addEventListener("click", openStockAddModal);
@@ -4314,6 +4350,17 @@ el.stockDeviceAddBtn.addEventListener("click", async () => {
   }
   const saved = await addDeviceUnit(productId, serial);
   if (saved) el.stockDeviceSerial.value = "";
+});
+
+el.stockConnectorQtyAddBtn.addEventListener("click", async () => {
+  const productId = el.stockDeviceProduct.value;
+  const qty = parseInt(el.stockConnectorQtyInput.value, 10);
+  if (!productId || !qty || qty <= 0) {
+    showToast("Izaberi konektor i unesi količinu veću od 0", true);
+    return;
+  }
+  await adjustConnectorStock(productId, qty);
+  el.stockConnectorQtyInput.value = "";
 });
 
 function renderStockConnectors() {
