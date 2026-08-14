@@ -67,6 +67,118 @@ body {
   background: #fff;
 }
 
+.page-nav-logout {
+  margin-left: auto;
+}
+
+.login-page:not([hidden]) {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--header-bg);
+}
+
+.login-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #fff;
+  padding: 32px;
+  border-radius: 10px;
+  width: 320px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+.login-box h1 {
+  margin: 0 0 8px;
+  text-align: center;
+  color: var(--header-bg);
+}
+
+.login-box label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.login-box input {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.login-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 0;
+}
+
+.role-table td, .role-table th {
+  vertical-align: top;
+}
+
+.empty-state-cell {
+  text-align: center;
+  color: var(--muted);
+  padding: 16px;
+}
+
+.role-perms-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 8px 0 4px;
+}
+
+.role-perm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.role-perm-row label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.role-perm-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.role-perm-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.role-perm-badge-none {
+  background: #eee;
+  color: var(--muted);
+}
+
+.role-perm-badge-view {
+  background: var(--report-blue-light);
+  color: var(--report-blue);
+}
+
+.role-perm-badge-edit {
+  background: var(--report-green-light);
+  color: var(--report-green);
+}
+
 .report-tabs {
   display: flex;
   gap: 8px;
@@ -409,9 +521,54 @@ table.report-table-green tfoot td {
 .swatch-weekend { background: var(--weekend-bg); }
 
 .table-wrap {
-  overflow: auto;
+  overflow-x: scroll;
+  overflow-y: auto;
   max-height: calc(100vh - 96px);
   position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) #f0f0f0;
+}
+
+/* #pageOverview je fiksirano na tačnu visinu ispod nav-a (--nav-h se postavlja
+   iz JS-a), a .table-wrap unutra je flex:1 — tako mu je donja ivica (gde je
+   horizontalna traka) uvek unutar vidljivog ekrana, bez skrolovanja cele
+   stranice da bi traka postala vidljiva. */
+#pageOverview:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--nav-h, 44px));
+  overflow: hidden;
+}
+
+#pageOverview > .topbar,
+#pageOverview > .legend {
+  flex-shrink: 0;
+}
+
+#pageOverview > .table-wrap {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+/* Forsira klasičan (uvek vidljiv) skrolbar umesto macOS overlay stila koji
+   se sakriva dok se ne skroluje. */
+.table-wrap::-webkit-scrollbar {
+  height: 12px;
+  width: 12px;
+}
+
+.table-wrap::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+
+.table-wrap::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+
+.table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 table.grid {
@@ -490,6 +647,12 @@ table.grid {
   width: 70px;
   min-width: 70px;
   border-right: 2px solid var(--border);
+}
+
+.grid td.price-col {
+  font-weight: 800;
+  background: var(--report-green-light);
+  color: var(--report-green);
 }
 
 .grid thead th.company-col,

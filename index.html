@@ -4,9 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>VRH — Kamioni</title>
-<link rel="stylesheet" href="css/style.css" />
+<link rel="stylesheet" href="css/style.css?v=20260814f" />
 </head>
 <body>
+  <div id="pageLogin" class="login-page" hidden>
+    <form id="loginForm" class="login-box">
+      <h1>VRH</h1>
+      <label>Email <input type="email" id="loginEmail" required autocomplete="username" /></label>
+      <label>Lozinka <input type="password" id="loginPassword" required autocomplete="current-password" /></label>
+      <button type="submit" class="btn btn-primary">Prijava</button>
+      <p id="loginError" class="login-error" hidden></p>
+    </form>
+  </div>
+
   <nav class="page-nav">
     <button id="navHome" class="page-nav-btn is-active">Početna</button>
     <button id="navOverview" class="page-nav-btn">Pregled kamiona</button>
@@ -15,6 +25,7 @@
     <button id="navOrders" class="page-nav-btn">Porudžbine</button>
     <button id="navStock" class="page-nav-btn">Stanje uređaja</button>
     <button id="navSettings" class="page-nav-btn">Podešavanja</button>
+    <button id="logoutBtn" class="page-nav-btn page-nav-logout">Odjava</button>
   </nav>
 
   <div id="pageHome">
@@ -468,6 +479,10 @@
         <div class="settings-menu-heading">Firme</div>
         <button id="settingsMenuCompanies" class="settings-menu-item">Kompanije</button>
         <button id="settingsMenuCompanyPrices" class="settings-menu-item">Kompanije cene</button>
+
+        <div class="settings-menu-heading">Nalozi</div>
+        <button id="settingsMenuRoles" class="settings-menu-item">Role</button>
+        <button id="settingsMenuUsers" class="settings-menu-item">Korisnici</button>
       </nav>
 
       <main class="settings-content">
@@ -531,7 +546,76 @@
           </div>
         </section>
 
+        <section id="settingsSectionRoles" class="settings-section settings-section-wide" hidden>
+          <h2>Role</h2>
+          <div class="settings-companies-toolbar">
+            <button id="roleAddBtn" class="btn btn-primary">+ Nova rola</button>
+          </div>
+          <table class="grid role-table">
+            <thead>
+              <tr><th>Naziv</th><th>Dozvole po stranici</th><th></th></tr>
+            </thead>
+            <tbody id="rolesBody"></tbody>
+          </table>
+        </section>
+
+        <section id="settingsSectionUsers" class="settings-section settings-section-wide" hidden>
+          <h2>Korisnici</h2>
+          <div class="settings-companies-toolbar">
+            <button id="userAddBtn" class="btn btn-primary">+ Dodaj korisnika</button>
+          </div>
+          <table class="grid role-table">
+            <thead>
+              <tr><th>Email</th><th>Rola</th><th></th></tr>
+            </thead>
+            <tbody id="usersBody"></tbody>
+          </table>
+        </section>
+
       </main>
+    </div>
+  </div>
+
+  <!-- Modal: nova/izmena rola -->
+  <div id="roleModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2 id="roleModalTitle">Nova rola</h2>
+      <form id="roleForm">
+        <label>
+          Naziv
+          <input type="text" id="roleModalName" required />
+        </label>
+        <div id="roleModalPerms" class="role-perms-grid"></div>
+        <div class="modal-actions">
+          <button type="button" id="roleModalCancel" class="btn">Otkaži</button>
+          <button type="submit" class="btn btn-primary">Sačuvaj</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: dodaj korisnika -->
+  <div id="userModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2>Dodaj korisnika</h2>
+      <form id="userForm">
+        <label>
+          Email
+          <input type="email" id="userModalEmail" required />
+        </label>
+        <label>
+          Lozinka
+          <input type="password" id="userModalPassword" required minlength="6" />
+        </label>
+        <label>
+          Rola
+          <select id="userModalRole" required></select>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="userModalCancel" class="btn">Otkaži</button>
+          <button type="submit" class="btn btn-primary">Sačuvaj</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -651,6 +735,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=20260814f"></script>
 </body>
 </html>

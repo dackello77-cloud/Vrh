@@ -1,4 +1,4 @@
-import { supabase } from "./supabase.js";
+import { supabase, supabaseAdminCreate } from "./supabase.js";
 
 const MONTH_NAMES = [
   "Januar", "Februar", "Mart", "April", "Maj", "Jun",
@@ -15,6 +15,24 @@ const START_TIER_PRICE = 25;
 const MANUALLY_VISIBLE_COMPANIES_KEY = "vrhManuallyVisibleCompanyIds";
 const LAST_PAGE_KEY = "vrhLastPage";
 const VALID_PAGES = ["home", "overview", "reports", "naplata", "orders", "stock", "settings"];
+const PAGE_LABELS = {
+  home: "Početna",
+  overview: "Pregled kamiona",
+  reports: "Izveštaj",
+  naplata: "Naplata",
+  orders: "Porudžbine",
+  stock: "Stanje uređaja",
+  settings: "Podešavanja",
+};
+const NAV_BTN_BY_PAGE = {
+  home: "navHome",
+  overview: "navOverview",
+  reports: "navReports",
+  naplata: "navNaplata",
+  orders: "navOrders",
+  stock: "navStock",
+  settings: "navSettings",
+};
 
 const now = new Date();
 
@@ -103,6 +121,12 @@ const state = {
   orderFormMode: "new", // "new" | "edit"
   editingOrderId: null,
   newOrderItems: [], // radni spisak artikala dok se popunjava "+ Nova porudžbina" forma
+  permissions: {}, // { pageKey: "none"|"view"|"edit" } — moje dozvole, iz my_permissions() RPC-a posle logina
+  roles: [],
+  rolesLoaded: false,
+  editingRoleId: null,
+  users: [], // profiles redovi (email + role_id) — samo za korisnike sa settings edit dozvolom
+  usersLoaded: false,
 };
 
 const el = {
@@ -254,6 +278,7 @@ const el = {
   importBtn: document.getElementById("importBtn"),
   importFile: document.getElementById("importFile"),
   tableWrap: document.querySelector(".table-wrap"),
+  pageNav: document.querySelector(".page-nav"),
   gridHeadRow1: document.getElementById("gridHeadRow1"),
   gridHeadRow2: document.getElementById("gridHeadRow2"),
   gridBody: document.getElementById("gridBody"),
@@ -270,6 +295,32 @@ const el = {
   companyBillingStartsOn: document.getElementById("companyBillingStartsOn"),
   companyNotes: document.getElementById("companyNotes"),
   cancelCompanyBtn: document.getElementById("cancelCompanyBtn"),
+  pageLogin: document.getElementById("pageLogin"),
+  loginForm: document.getElementById("loginForm"),
+  loginEmail: document.getElementById("loginEmail"),
+  loginPassword: document.getElementById("loginPassword"),
+  loginError: document.getElementById("loginError"),
+  logoutBtn: document.getElementById("logoutBtn"),
+  settingsMenuRoles: document.getElementById("settingsMenuRoles"),
+  settingsMenuUsers: document.getElementById("settingsMenuUsers"),
+  settingsSectionRoles: document.getElementById("settingsSectionRoles"),
+  settingsSectionUsers: document.getElementById("settingsSectionUsers"),
+  rolesBody: document.getElementById("rolesBody"),
+  usersBody: document.getElementById("usersBody"),
+  roleAddBtn: document.getElementById("roleAddBtn"),
+  userAddBtn: document.getElementById("userAddBtn"),
+  roleModal: document.getElementById("roleModal"),
+  roleModalTitle: document.getElementById("roleModalTitle"),
+  roleForm: document.getElementById("roleForm"),
+  roleModalName: document.getElementById("roleModalName"),
+  roleModalPerms: document.getElementById("roleModalPerms"),
+  roleModalCancel: document.getElementById("roleModalCancel"),
+  userModal: document.getElementById("userModal"),
+  userForm: document.getElementById("userForm"),
+  userModalEmail: document.getElementById("userModalEmail"),
+  userModalPassword: document.getElementById("userModalPassword"),
+  userModalRole: document.getElementById("userModalRole"),
+  userModalCancel: document.getElementById("userModalCancel"),
 };
 
 function pad(n) {
@@ -578,6 +629,7 @@ function renderCompanyRow(company, nDays, todayDay) {
   tdName.appendChild(nameText);
   tdName.addEventListener("contextmenu", (e) => {
     e.preventDefault();
+    if (!canEdit("overview")) return;
     openCompanyModal(company);
   });
   tr.appendChild(tdName);
@@ -897,17 +949,20 @@ async function checkForNewCompanies() {
 
 function scrollToToday() {
   if (state.hasScrolledToToday || !isCurrentMonth()) return;
+  // Stranica Pregled kamiona nije podrazumevano vidljiva (Početna je) — dok
+  // je sakrivena (hidden), offsetLeft/offsetWidth su svi 0, pa bi se ovde
+  // izračunala besmislena pozicija i (pošto se hasScrolledToToday postavlja
+  // niže) funkcija se nikad ne bi ponovo pokrenula kad se strana stvarno
+  // otvori. offsetParent je null dok je element sakriven — bezbedan test.
+  if (el.tableWrap && el.tableWrap.offsetParent === null) return;
+
   const todayHeader = el.gridHeadRow1.querySelector(".day-group-header.today-col");
   const priceHeader = el.gridHeadRow1.querySelector(".price-col");
   if (!todayHeader || !priceHeader || !el.tableWrap) return;
 
   const stickyWidth = priceHeader.offsetLeft + priceHeader.offsetWidth;
-  const containerWidth = el.tableWrap.clientWidth;
-  const target =
-    todayHeader.offsetLeft +
-    todayHeader.offsetWidth / 2 -
-    stickyWidth -
-    (containerWidth - stickyWidth) / 2;
+  // "Danas" odmah posle cena (levo poravnato uz sticky kolone), ne na sredini.
+  const target = todayHeader.offsetLeft - stickyWidth;
 
   el.tableWrap.scrollLeft = Math.max(0, target);
   state.hasScrolledToToday = true;
@@ -1168,7 +1223,49 @@ async function importExcelFile(file) {
 
 // ---------- page navigation ----------
 
+// ---------- auth / dozvole ----------
+
+function canView(page) {
+  const p = state.permissions[page];
+  return p === "view" || p === "edit";
+}
+
+function canEdit(page) {
+  return state.permissions[page] === "edit";
+}
+
+function firstAccessiblePage() {
+  return VALID_PAGES.find((p) => canView(p)) || null;
+}
+
+function applyNavPermissions() {
+  for (const page of VALID_PAGES) {
+    const btn = el[NAV_BTN_BY_PAGE[page]];
+    if (btn) btn.hidden = !canView(page);
+  }
+}
+
+// Guard za mutating dugmad/formu: ako trenutna stranica nije "edit", sakrij
+// dugme/onemogući formu umesto da se korisnik oslanja samo na server-side
+// RLS grešku. Ovo je UX sloj — prava zaštita je RLS u sql/auth_roles.sql.
+function hideIfNoEdit(page, ...elements) {
+  const hide = !canEdit(page);
+  for (const node of elements) {
+    if (!node) continue;
+    node.hidden = hide;
+  }
+}
+
 function showPage(page) {
+  if (!canView(page)) {
+    const fallback = firstAccessiblePage();
+    if (!fallback) {
+      showToast("Nemate dozvolu ni za jednu stranicu. Obratite se administratoru.", true);
+      return;
+    }
+    showPage(fallback);
+    return;
+  }
   saveLastPage(page);
   el.pageHome.hidden = page !== "home";
   el.pageOverview.hidden = page !== "overview";
@@ -1187,18 +1284,29 @@ function showPage(page) {
   if (page === "home") {
     loadHomeDashboard();
   }
+  if (page === "overview") {
+    requestAnimationFrame(scrollToToday);
+    hideIfNoEdit("overview", el.importBtn, el.syncBtn);
+  }
   if (page === "reports" && !el.reportContent.dataset.rendered) {
     runReport();
   }
   if (page === "naplata" && !state.naplataLoaded) {
     loadNaplata().then(afterNaplataLoad);
   }
+  if (page === "naplata") {
+    hideIfNoEdit("naplata", el.naplataAddBtn, el.naplataImportBtn);
+  }
   if (page === "orders" && !state.ordersLoaded) {
     Promise.all([loadOrders(), loadOrderItems(), state.productsLoaded ? Promise.resolve() : loadProducts()]).then(
       renderOrders
     );
   }
+  if (page === "orders") {
+    hideIfNoEdit("orders", el.ordersAddBtn, el.ordersImportBtn);
+  }
   if (page === "stock") {
+    hideIfNoEdit("stock", el.stockAddBtn);
     const need = [];
     if (!state.productsLoaded) need.push(loadProducts());
     if (!state.deviceUnitsLoaded) need.push(loadDeviceUnits());
@@ -1209,6 +1317,19 @@ function showPage(page) {
   }
   if (page === "settings" && !state.productsLoaded) {
     loadProducts().then(renderSettingsProducts);
+  }
+  if (page === "settings") {
+    hideIfNoEdit(
+      "settings",
+      el.settingsDeviceForm,
+      el.settingsConnectorForm,
+      el.settingsCompanyImportBtn,
+      el.settingsCompanyPriceImportBtn,
+      el.roleAddBtn,
+      el.userAddBtn,
+      el.settingsMenuRoles,
+      el.settingsMenuUsers
+    );
   }
 }
 
@@ -1344,8 +1465,10 @@ function buildNaplataRow(row, indented = false) {
     `naplata-collected-btn naplata-collected-${collectedState}`,
     row.collected === true ? "Da" : row.collected === false ? "Ne" : "—"
   );
+  const naplataEditable = canEdit("naplata");
   collectedBtn.type = "button";
   collectedBtn.title = "Klikni da promeniš naplaćeno (Da/Ne)";
+  collectedBtn.disabled = !naplataEditable;
   collectedBtn.addEventListener("click", () => {
     updateNaplataField(row.id, "collected", row.collected !== true);
   });
@@ -1358,7 +1481,7 @@ function buildNaplataRow(row, indented = false) {
   const allCheckInput = document.createElement("input");
   allCheckInput.type = "checkbox";
   allCheckInput.checked = !!row.all_checked;
-  allCheckInput.disabled = incomplete;
+  allCheckInput.disabled = incomplete || !naplataEditable;
   allCheckInput.title = incomplete ? "Popuni broj računa, naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
   allCheckInput.addEventListener("change", () => updateNaplataField(row.id, "all_checked", allCheckInput.checked));
   allCheckTd.appendChild(allCheckInput);
@@ -1368,18 +1491,20 @@ function buildNaplataRow(row, indented = false) {
   const closedInput = document.createElement("input");
   closedInput.type = "checkbox";
   closedInput.checked = !!row.closed;
-  closedInput.disabled = incomplete;
+  closedInput.disabled = incomplete || !naplataEditable;
   closedInput.title = incomplete ? "Popuni broj računa, naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
   closedInput.addEventListener("change", () => handleClosedToggle(row, closedInput));
   closedTd.appendChild(closedInput);
   tr.appendChild(closedTd);
 
   const pencilTd = document.createElement("td");
-  const pencilBtn = el_("button", "icon-btn icon-pencil", "✎");
-  pencilBtn.type = "button";
-  pencilBtn.title = "Izmeni stavku";
-  pencilBtn.addEventListener("click", () => openNaplataModal("edit", row));
-  pencilTd.appendChild(pencilBtn);
+  if (naplataEditable) {
+    const pencilBtn = el_("button", "icon-btn icon-pencil", "✎");
+    pencilBtn.type = "button";
+    pencilBtn.title = "Izmeni stavku";
+    pencilBtn.addEventListener("click", () => openNaplataModal("edit", row));
+    pencilTd.appendChild(pencilBtn);
+  }
   tr.appendChild(pencilTd);
 
   return tr;
@@ -2668,14 +2793,16 @@ function buildOrderRow(order, rowIndex) {
   tr.appendChild(statusTd);
 
   const editTd = document.createElement("td");
-  const editBtn = el_("button", "icon-btn icon-pencil", "✎");
-  editBtn.type = "button";
-  editBtn.title = "Izmeni porudžbinu";
-  editBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    openOrderForm("edit", order);
-  });
-  editTd.appendChild(editBtn);
+  if (canEdit("orders")) {
+    const editBtn = el_("button", "icon-btn icon-pencil", "✎");
+    editBtn.type = "button";
+    editBtn.title = "Izmeni porudžbinu";
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openOrderForm("edit", order);
+    });
+    editTd.appendChild(editBtn);
+  }
   tr.appendChild(editTd);
 
   tr.addEventListener("click", () => openOrderDetail(order));
@@ -3483,6 +3610,7 @@ function buildEditableTextCell(company, field) {
   input.type = "text";
   input.className = "settings-inline-input";
   input.value = company[field] || "";
+  input.disabled = !canEdit("settings");
   input.addEventListener("change", async () => {
     const value = input.value.trim() || null;
     const { error } = await supabase.from("companies").update({ [field]: value }).eq("id", company.id);
@@ -3506,6 +3634,7 @@ function buildEditablePriceCell(companyId, productId, existingRow) {
   input.className = "settings-inline-input settings-price-input";
   input.placeholder = "—";
   if (existingRow) input.value = existingRow.price;
+  input.disabled = !canEdit("settings");
 
   input.addEventListener("change", async () => {
     const raw = input.value.trim();
@@ -3977,10 +4106,22 @@ function showSettingsSection(section) {
   el.settingsSectionConnectors.hidden = section !== "connectors";
   el.settingsSectionCompanies.hidden = section !== "companies";
   el.settingsSectionCompanyPrices.hidden = section !== "companyPrices";
+  el.settingsSectionRoles.hidden = section !== "roles";
+  el.settingsSectionUsers.hidden = section !== "users";
   el.settingsMenuDevices.classList.toggle("is-active", section === "devices");
   el.settingsMenuConnectors.classList.toggle("is-active", section === "connectors");
   el.settingsMenuCompanies.classList.toggle("is-active", section === "companies");
   el.settingsMenuCompanyPrices.classList.toggle("is-active", section === "companyPrices");
+  el.settingsMenuRoles.classList.toggle("is-active", section === "roles");
+  el.settingsMenuUsers.classList.toggle("is-active", section === "users");
+  if (section === "roles" && !state.rolesLoaded) {
+    loadRoles().then(renderRoles);
+  }
+  if (section === "users") {
+    Promise.all([state.rolesLoaded ? Promise.resolve() : loadRoles(), loadUsers()]).then(() => {
+      renderUsers();
+    });
+  }
   if (section === "companies" && !state.companyPricesLoaded) {
     Promise.all([state.productsLoaded ? Promise.resolve() : loadProducts(), loadCompanyPrices()]).then(
       renderSettingsCompanies
@@ -4003,6 +4144,8 @@ el.settingsMenuDevices.addEventListener("click", () => showSettingsSection("devi
 el.settingsMenuConnectors.addEventListener("click", () => showSettingsSection("connectors"));
 el.settingsMenuCompanies.addEventListener("click", () => showSettingsSection("companies"));
 el.settingsMenuCompanyPrices.addEventListener("click", () => showSettingsSection("companyPrices"));
+el.settingsMenuRoles.addEventListener("click", () => showSettingsSection("roles"));
+el.settingsMenuUsers.addEventListener("click", () => showSettingsSection("users"));
 
 // ---------- stanje uređaja (serijski brojevi) i konektora (broj) — posebna stranica ----------
 
@@ -4096,7 +4239,7 @@ function renderStockDevices() {
         tr.appendChild(el_("td", null, unit.order_id ? "Da" : "—"));
 
         const delTd = document.createElement("td");
-        if (unit.status === "in_stock") {
+        if (unit.status === "in_stock" && canEdit("stock")) {
           const delBtn = el_("button", "icon-btn", "×");
           delBtn.type = "button";
           delBtn.title = "Obriši";
@@ -4187,23 +4330,25 @@ function renderStockConnectors() {
     const li = document.createElement("li");
     li.appendChild(el_("span", null, `${p.name} — na stanju: ${p.stock_quantity ?? 0}`));
 
-    const controls = el_("span", "stock-connector-controls");
-    const input = document.createElement("input");
-    input.type = "number";
-    input.step = "1";
-    input.placeholder = "+/-";
-    input.className = "stock-connector-input";
-    const applyBtn = el_("button", "icon-btn", "Primeni");
-    applyBtn.type = "button";
-    applyBtn.addEventListener("click", async () => {
-      const delta = parseInt(input.value, 10);
-      if (Number.isNaN(delta) || delta === 0) return;
-      await adjustConnectorStock(p.id, delta);
-      input.value = "";
-    });
-    controls.appendChild(input);
-    controls.appendChild(applyBtn);
-    li.appendChild(controls);
+    if (canEdit("stock")) {
+      const controls = el_("span", "stock-connector-controls");
+      const input = document.createElement("input");
+      input.type = "number";
+      input.step = "1";
+      input.placeholder = "+/-";
+      input.className = "stock-connector-input";
+      const applyBtn = el_("button", "icon-btn", "Primeni");
+      applyBtn.type = "button";
+      applyBtn.addEventListener("click", async () => {
+        const delta = parseInt(input.value, 10);
+        if (Number.isNaN(delta) || delta === 0) return;
+        await adjustConnectorStock(p.id, delta);
+        input.value = "";
+      });
+      controls.appendChild(input);
+      controls.appendChild(applyBtn);
+      li.appendChild(controls);
+    }
     el.stockConnectorsList.appendChild(li);
   }
 }
@@ -4571,13 +4716,396 @@ el.homeStockModal.addEventListener("click", (e) => {
   if (e.target === el.homeStockModal) el.homeStockModal.hidden = true;
 });
 
+// ---------- role i korisnici (Settings > Nalozi) ----------
+
+async function loadRoles() {
+  const { data, error } = await supabase.from("roles").select("*").order("name");
+  if (error) {
+    showToast("Greška pri učitavanju rola: " + error.message, true);
+    return;
+  }
+  state.roles = data || [];
+  state.rolesLoaded = true;
+}
+
+async function loadUsers() {
+  const { data, error } = await supabase.from("profiles").select("*").order("email");
+  if (error) {
+    showToast("Greška pri učitavanju korisnika: " + error.message, true);
+    return;
+  }
+  state.users = data || [];
+  state.usersLoaded = true;
+}
+
+function permBadge(page, level) {
+  const cls =
+    level === "edit" ? "role-perm-badge-edit" : level === "view" ? "role-perm-badge-view" : "role-perm-badge-none";
+  const label = level === "edit" ? "Izmena" : "Pregled";
+  return el_("span", `role-perm-badge ${cls}`, `${PAGE_LABELS[page]}: ${label}`);
+}
+
+function renderRoles() {
+  el.rolesBody.innerHTML = "";
+  if (state.roles.length === 0) {
+    const tr = document.createElement("tr");
+    const td = el_("td", "empty-state-cell", "Nema rola. Napravi prvu.");
+    td.colSpan = 3;
+    tr.appendChild(td);
+    el.rolesBody.appendChild(tr);
+    return;
+  }
+  for (const role of state.roles) {
+    const tr = document.createElement("tr");
+    tr.appendChild(el_("td", null, role.name));
+
+    const permsTd = document.createElement("td");
+    const badges = document.createElement("div");
+    badges.className = "role-perm-badges";
+    for (const page of VALID_PAGES) {
+      const level = role.permissions?.[page];
+      if (level !== "view" && level !== "edit") continue;
+      badges.appendChild(permBadge(page, level));
+    }
+    if (!badges.children.length) badges.appendChild(el_("span", "role-perm-badge role-perm-badge-none", "Bez pristupa"));
+    permsTd.appendChild(badges);
+    tr.appendChild(permsTd);
+
+    const actionsTd = document.createElement("td");
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn btn-icon";
+    editBtn.textContent = "✎";
+    editBtn.title = "Izmeni";
+    editBtn.addEventListener("click", () => openRoleModal(role));
+    actionsTd.appendChild(editBtn);
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn btn-icon";
+    delBtn.textContent = "🗑";
+    delBtn.title = "Obriši";
+    delBtn.addEventListener("click", () => deleteRole(role));
+    actionsTd.appendChild(delBtn);
+    tr.appendChild(actionsTd);
+
+    el.rolesBody.appendChild(tr);
+  }
+}
+
+function openRoleModal(role) {
+  state.editingRoleId = role ? role.id : null;
+  el.roleModalTitle.textContent = role ? "Izmena role" : "Nova rola";
+  el.roleModalName.value = role ? role.name : "";
+  el.roleModalPerms.innerHTML = "";
+  for (const page of VALID_PAGES) {
+    const row = document.createElement("div");
+    row.className = "role-perm-row";
+    const selectId = `rolePerm_${page}`;
+    const label = el_("label", null, PAGE_LABELS[page]);
+    label.setAttribute("for", selectId);
+    const select = document.createElement("select");
+    select.id = selectId;
+    select.dataset.page = page;
+    for (const [value, text] of [
+      ["none", "Bez pristupa"],
+      ["view", "Pregled"],
+      ["edit", "Izmena"],
+    ]) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = text;
+      select.appendChild(opt);
+    }
+    select.value = role?.permissions?.[page] || "none";
+    row.appendChild(label);
+    row.appendChild(select);
+    el.roleModalPerms.appendChild(row);
+  }
+  el.roleModal.hidden = false;
+}
+
+el.roleAddBtn.addEventListener("click", () => openRoleModal(null));
+el.roleModalCancel.addEventListener("click", () => {
+  el.roleModal.hidden = true;
+});
+el.roleModal.addEventListener("click", (e) => {
+  if (e.target === el.roleModal) el.roleModal.hidden = true;
+});
+
+el.roleForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = el.roleModalName.value.trim();
+  if (!name) return;
+  const permissions = {};
+  el.roleModalPerms.querySelectorAll("select").forEach((select) => {
+    if (select.value !== "none") permissions[select.dataset.page] = select.value;
+  });
+
+  const payload = { name, permissions };
+  const { error } = state.editingRoleId
+    ? await supabase.from("roles").update(payload).eq("id", state.editingRoleId)
+    : await supabase.from("roles").insert(payload);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  el.roleModal.hidden = true;
+  await loadRoles();
+  renderRoles();
+  showToast("Sačuvano");
+  if (state.usersLoaded) renderUsers();
+});
+
+async function deleteRole(role) {
+  if (!confirm(`Obriši rolu "${role.name}"? Korisnici sa ovom rolom ostaju bez pristupa dok im se ne dodeli druga.`)) {
+    return;
+  }
+  const { error } = await supabase.from("roles").delete().eq("id", role.id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  await loadRoles();
+  renderRoles();
+  showToast("Obrisano");
+}
+
+function renderUsers() {
+  el.usersBody.innerHTML = "";
+  if (state.users.length === 0) {
+    const tr = document.createElement("tr");
+    const td = el_("td", "empty-state-cell", "Nema korisnika.");
+    td.colSpan = 3;
+    tr.appendChild(td);
+    el.usersBody.appendChild(tr);
+    return;
+  }
+  for (const user of state.users) {
+    const tr = document.createElement("tr");
+    tr.appendChild(el_("td", null, user.email));
+
+    const roleTd = document.createElement("td");
+    const select = document.createElement("select");
+    const noneOpt = document.createElement("option");
+    noneOpt.value = "";
+    noneOpt.textContent = "— Bez role —";
+    select.appendChild(noneOpt);
+    for (const role of state.roles) {
+      const opt = document.createElement("option");
+      opt.value = role.id;
+      opt.textContent = role.name;
+      select.appendChild(opt);
+    }
+    select.value = user.role_id || "";
+    select.addEventListener("change", async () => {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ role_id: select.value || null })
+        .eq("id", user.id);
+      if (error) {
+        showToast("Greška: " + error.message, true);
+        return;
+      }
+      user.role_id = select.value || null;
+      showToast("Sačuvano");
+    });
+    roleTd.appendChild(select);
+    tr.appendChild(roleTd);
+
+    const actionsTd = document.createElement("td");
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "btn btn-icon";
+    delBtn.textContent = "🗑";
+    delBtn.title = "Nalog ostaje u Supabase Auth, samo gubi pristup app-u dok mu se ponovo ne dodeli rola";
+    delBtn.addEventListener("click", () => removeUserAccess(user));
+    actionsTd.appendChild(delBtn);
+    tr.appendChild(actionsTd);
+
+    el.usersBody.appendChild(tr);
+  }
+}
+
+async function removeUserAccess(user) {
+  if (
+    !confirm(
+      `Ukloni pristup za ${user.email}? Nalog ostaje da postoji, ali više neće moći da se prijavi u app dok mu se ponovo ne dodeli rola.`
+    )
+  ) {
+    return;
+  }
+  const { error } = await supabase.from("profiles").delete().eq("id", user.id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  await loadUsers();
+  renderUsers();
+  showToast("Uklonjeno");
+}
+
+el.userAddBtn.addEventListener("click", () => {
+  if (state.roles.length === 0) {
+    showToast("Prvo napravi bar jednu rolu.", true);
+    return;
+  }
+  el.userModalEmail.value = "";
+  el.userModalPassword.value = "";
+  el.userModalRole.innerHTML = "";
+  for (const role of state.roles) {
+    const opt = document.createElement("option");
+    opt.value = role.id;
+    opt.textContent = role.name;
+    el.userModalRole.appendChild(opt);
+  }
+  el.userModal.hidden = false;
+});
+el.userModalCancel.addEventListener("click", () => {
+  el.userModal.hidden = true;
+});
+el.userModal.addEventListener("click", (e) => {
+  if (e.target === el.userModal) el.userModal.hidden = true;
+});
+
+el.userForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = el.userModalEmail.value.trim();
+  const password = el.userModalPassword.value;
+  const roleId = el.userModalRole.value;
+  if (!email || !password || !roleId) return;
+
+  // Poseban izolovan klijent (supabaseAdminCreate, sopstveni storageKey) —
+  // signUp() bi inače zamenio TRENUTNU (admin) sesiju u glavnom `supabase`
+  // klijentu, odjavljujući admina usred kreiranja novog naloga.
+  const { data, error } = await supabaseAdminCreate.auth.signUp({ email, password });
+  if (error) {
+    showToast("Greška pri kreiranju naloga: " + error.message, true);
+    return;
+  }
+  if (!data.user) {
+    showToast(
+      "Nalog nije odmah aktivan — proveri da li je 'Confirm email' isključen u Supabase Auth podešavanjima.",
+      true
+    );
+    return;
+  }
+  await supabaseAdminCreate.auth.signOut();
+
+  const { error: profileError } = await supabase.from("profiles").insert({ id: data.user.id, email, role_id: roleId });
+  if (profileError) {
+    showToast("Nalog kreiran, ali dodela role nije uspela: " + profileError.message, true);
+    return;
+  }
+
+  el.userModal.hidden = true;
+  await loadUsers();
+  renderUsers();
+  showToast("Korisnik dodat");
+});
+
+// ---------- login / logout ----------
+
+async function loadMyPermissions() {
+  const { data, error } = await supabase.rpc("my_permissions");
+  if (error) {
+    console.error(error);
+    state.permissions = {};
+    return;
+  }
+  state.permissions = data || {};
+}
+
+function pageElByKey(page) {
+  return el[`page${page[0].toUpperCase()}${page.slice(1)}`];
+}
+
+function showLoginPage(message) {
+  el.pageNav.hidden = true;
+  for (const page of VALID_PAGES) {
+    const pageEl = pageElByKey(page);
+    if (pageEl) pageEl.hidden = true;
+  }
+  el.pageLogin.hidden = false;
+  if (message) {
+    el.loginError.textContent = message;
+    el.loginError.hidden = false;
+  } else {
+    el.loginError.hidden = true;
+  }
+}
+
+async function bootstrapAfterLogin() {
+  await loadMyPermissions();
+  applyNavPermissions();
+  el.pageLogin.hidden = true;
+  el.pageNav.hidden = false;
+  el.loginEmail.value = "";
+  el.loginPassword.value = "";
+
+  const fallback = firstAccessiblePage();
+  if (!fallback) {
+    showToast("Nemate dozvolu ni za jednu stranicu. Obratite se administratoru.", true);
+    return;
+  }
+
+  await refreshAll();
+  const last = loadLastPage();
+  showPage(canView(last) ? last : fallback);
+  checkForNewCompanies();
+  runNaplataAutoSync();
+}
+
+el.loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = el.loginEmail.value.trim();
+  const password = el.loginPassword.value;
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    showLoginPage("Pogrešan email ili lozinka.");
+    return;
+  }
+  await bootstrapAfterLogin();
+});
+
+el.logoutBtn.addEventListener("click", async () => {
+  await supabase.auth.signOut();
+  location.reload();
+});
+
 // ---------- init ----------
 
-// showPage(...) posle refreshAll (ne pre) — Početna (computeHomeTruckStats) i
-// Pregled kamiona i drugi tabovi računaju na state.companies koji refreshAll
-// popunjava; showPage tek onda pokreće učitavanje za stranu na kojoj je
-// korisnik ostao (localStorage), umesto da uvek startuje na Početnoj.
-refreshAll()
-  .then(() => showPage(loadLastPage()))
-  .then(checkForNewCompanies)
-  .then(runNaplataAutoSync);
+// #pageOverview koristi --nav-h da tačno popuni prostor ispod .page-nav
+// (umesto pogađanja fiksnim brojem u CSS-u) — bez ovoga .table-wrap zna da
+// bude viši od preostalog prostora na ekranu, pa mu donja ivica (horizontalna
+// traka) upadne ispod vidljivog dela ekrana dok se cela strana ne skroluje.
+function syncNavHeightVar() {
+  if (!el.pageNav) return;
+  document.documentElement.style.setProperty("--nav-h", `${el.pageNav.offsetHeight}px`);
+}
+syncNavHeightVar();
+window.addEventListener("resize", syncNavHeightVar);
+
+// Sve je sakriveno dok se ne zna da li postoji aktivna sesija (izbegava da
+// Početna strana "trepne" vidljivo pre provere logina — #pageHome u HTML-u
+// nema `hidden` po defaultu jer je to inicijalna strana posle logina).
+el.pageNav.hidden = true;
+for (const page of VALID_PAGES) {
+  const pageEl = pageElByKey(page);
+  if (pageEl) pageEl.hidden = true;
+}
+
+supabase.auth.getSession().then(({ data }) => {
+  if (data.session) {
+    bootstrapAfterLogin();
+  } else {
+    showLoginPage();
+  }
+});
+
+// Odjava iz drugog taba / istekla sesija — vrati na login umesto da app
+// ostane "zaglavljen" sa praznim podacima posle isteklog tokena.
+supabase.auth.onAuthStateChange((event) => {
+  if (event === "SIGNED_OUT") {
+    location.reload();
+  }
+});
