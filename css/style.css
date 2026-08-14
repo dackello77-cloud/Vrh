@@ -1713,21 +1713,6 @@ table.orders-table th, table.orders-table td {
   color: var(--muted);
 }
 
-.home-stock-modal-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.home-stock-modal-row {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.home-stock-modal-row:last-child {
-  border-bottom: none;
-}
-
 .stock-device-type-table th, .stock-device-type-table td {
   text-align: left;
 }

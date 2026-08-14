@@ -136,9 +136,6 @@ const el = {
   homeStatToday: document.getElementById("homeStatToday"),
   homeDailyReportBtn: document.getElementById("homeDailyReportBtn"),
   homeStockBtn: document.getElementById("homeStockBtn"),
-  homeStockModal: document.getElementById("homeStockModal"),
-  homeStockModalList: document.getElementById("homeStockModalList"),
-  homeStockModalCloseBtn: document.getElementById("homeStockModalCloseBtn"),
   homeStockCards: document.getElementById("homeStockCards"),
   homeRecentNaplata: document.getElementById("homeRecentNaplata"),
   homeRecentOrders: document.getElementById("homeRecentOrders"),
@@ -4669,51 +4666,10 @@ el.homeDailyReportBtn.addEventListener("click", () => {
   setReportType("daily");
 });
 
-// Sa Početne (mobilna verzija): čisto informativan pregled stanja, ne vodi
-// na punu Stanje uređaja stranicu — mali modal, samo naziv i broj, bez
-// dugmeta za dodavanje.
-function renderHomeStockModalList() {
-  el.homeStockModalList.innerHTML = "";
-  const devices = state.products.filter((p) => p.type === "device");
-  const connectors = state.products.filter((p) => p.type === "connector");
-
-  if (devices.length === 0 && connectors.length === 0) {
-    el.homeStockModalList.appendChild(el_("div", "section-hint", "Nema proizvoda u katalogu"));
-    return;
-  }
-
-  for (const p of devices) {
-    const inStock = state.deviceUnits.filter((u) => u.product_id === p.id && u.status === "in_stock").length;
-    const row = document.createElement("div");
-    row.className = "stock-type-header home-stock-modal-row";
-    row.appendChild(el_("div", "stock-type-name", p.name));
-    row.appendChild(el_("div", "stock-type-count", String(inStock)));
-    row.appendChild(el_("div", "stock-type-sublabel", "na stanju"));
-    el.homeStockModalList.appendChild(row);
-  }
-
-  for (const p of connectors) {
-    const row = document.createElement("div");
-    row.className = "stock-type-header home-stock-modal-row";
-    row.appendChild(el_("div", "stock-type-name", p.name));
-    row.appendChild(el_("div", "stock-type-count", String(p.stock_quantity ?? 0)));
-    row.appendChild(el_("div", "stock-type-sublabel", "na stanju"));
-    el.homeStockModalList.appendChild(row);
-  }
-}
-
-el.homeStockBtn.addEventListener("click", async () => {
-  if (!state.productsLoaded) await loadProducts();
-  if (!state.deviceUnitsLoaded) await loadDeviceUnits();
-  renderHomeStockModalList();
-  el.homeStockModal.hidden = false;
-});
-
-el.homeStockModalCloseBtn.addEventListener("click", () => {
-  el.homeStockModal.hidden = true;
-});
-el.homeStockModal.addEventListener("click", (e) => {
-  if (e.target === el.homeStockModal) el.homeStockModal.hidden = true;
+// Sa Početne (mobilna verzija): vodi na punu Stanje uređaja stranicu (koja je
+// već read-only na mobilnoj — vidi mobile @media blok u style.css).
+el.homeStockBtn.addEventListener("click", () => {
+  showPage("stock");
 });
 
 // ---------- role i korisnici (Settings > Nalozi) ----------
