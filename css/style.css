@@ -1994,6 +1994,14 @@ table.orders-table th, table.orders-table td {
     display: none;
   }
 
+  /* VRH/RST kartice i kolone jedno ispod drugog (prvo VRH pa RST) umesto
+     zbijeno jedno pored drugog na uskom ekranu. */
+  .report-totals,
+  .report-columns {
+    display: flex;
+    flex-direction: column;
+  }
+
   .page-nav {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
