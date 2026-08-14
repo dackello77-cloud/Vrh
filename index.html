@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>VRH — Kamioni</title>
-<link rel="stylesheet" href="css/style.css?v=20260814i" />
+<link rel="stylesheet" href="css/style.css?v=20260814j" />
 </head>
 <body>
   <div id="pageLogin" class="login-page" hidden>
@@ -429,7 +429,7 @@
       <div id="stockDeviceAddSection">
         <div class="stock-modal-manual">
           <input type="text" id="stockDeviceSerial" placeholder="Serijski broj (ručno, jedan po jedan)" />
-          <button type="button" id="stockDeviceAddBtn" class="btn">Dodaj ovaj</button>
+          <button type="button" id="stockDeviceAddBtn" class="btn">Dodaj u listu</button>
         </div>
 
         <div class="stock-modal-divider">ili</div>
@@ -447,17 +447,20 @@
           </label>
           <div class="section-hint">Pronađeni mogući serijski brojevi — otštikliraj/ispravi pre dodavanja:</div>
           <div id="stockOcrCandidates" class="stock-ocr-candidates"></div>
-          <button type="button" id="stockOcrConfirmBtn" class="btn btn-primary">Dodaj izabrane</button>
+          <button type="button" id="stockOcrConfirmBtn" class="btn btn-primary">Dodaj izabrane u listu</button>
         </div>
       </div>
 
       <div id="stockConnectorAddSection" class="stock-modal-manual" hidden>
         <input type="number" id="stockConnectorQtyInput" min="1" step="1" placeholder="Količina" />
-        <button type="button" id="stockConnectorQtyAddBtn" class="btn">Dodaj na stanje</button>
+        <button type="button" id="stockConnectorQtyAddBtn" class="btn">Dodaj u listu</button>
       </div>
+
+      <div id="stockPendingList" class="stock-pending-list" hidden></div>
 
       <div class="modal-actions">
         <button type="button" id="stockModalCloseBtn" class="btn">Zatvori</button>
+        <button type="button" id="stockSaveBtn" class="btn btn-primary">Sačuvaj (<span id="stockSaveBtnCount">0</span>)</button>
       </div>
     </div>
   </div>
@@ -726,6 +729,6 @@
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
-  <script type="module" src="js/app.js?v=20260814i"></script>
+  <script type="module" src="js/app.js?v=20260814j"></script>
 </body>
 </html>

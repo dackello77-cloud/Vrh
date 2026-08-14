@@ -1637,6 +1637,28 @@ table.orders-table th, table.orders-table td {
   margin-top: 10px;
 }
 
+.stock-pending-list {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stock-pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--today-col);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
 .stock-ocr-result {
   display: flex;
   flex-direction: column;
@@ -1723,19 +1745,6 @@ table.orders-table th, table.orders-table td {
   text-align: left;
 }
 
-.stock-connector-controls {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.stock-connector-input {
-  width: 60px;
-  font: inherit;
-  padding: 4px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
 
 /* ---------- početna (dashboard) ---------- */
 
@@ -1973,11 +1982,9 @@ table.orders-table th, table.orders-table td {
   }
 
   /* Stanje uređaja: samo pregled na mobilnom - bez dodavanja/brisanja, bez
-     serijskih brojeva/statusa (samo naziv + broj na stanju), bez +/- unosa
-     kod konektora. */
+     serijskih brojeva/statusa (samo naziv + broj na stanju). */
   #stockAddBtn,
-  .stock-device-type-section .table-wrap,
-  .stock-connector-controls {
+  .stock-device-type-section .table-wrap {
     display: none;
   }
 

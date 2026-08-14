@@ -110,6 +110,7 @@ const state = {
   deviceUnits: [],
   deviceUnitsLoaded: false,
   ocrCandidateSerials: [], // [{ text, checked }] radni spisak dok se pregledaju OCR rezultati
+  stockPendingItems: [], // [{ type:"device", productId, productName, serial } | { type:"connector", productId, productName, qty }] - lista u "+ Dodaj" modalu pre klika na Sačuvaj
   settingsCompanySearch: "",
   settingsCompanyPriceSearch: "",
   orders: [],
@@ -225,6 +226,9 @@ const el = {
   stockOcrRawText: document.getElementById("stockOcrRawText"),
   stockOcrCandidates: document.getElementById("stockOcrCandidates"),
   stockOcrConfirmBtn: document.getElementById("stockOcrConfirmBtn"),
+  stockPendingList: document.getElementById("stockPendingList"),
+  stockSaveBtn: document.getElementById("stockSaveBtn"),
+  stockSaveBtnCount: document.getElementById("stockSaveBtnCount"),
   stockDeviceSections: document.getElementById("stockDeviceSections"),
   stockConnectorsList: document.getElementById("stockConnectorsList"),
   naplataTabActive: document.getElementById("naplataTabActive"),
@@ -4316,6 +4320,37 @@ function syncStockModalProductType() {
 
 el.stockDeviceProduct.addEventListener("change", syncStockModalProductType);
 
+// "+ Dodaj" modal ne upisuje u bazu na svaki klik — svaka stavka (serijski
+// broj ili količina konektora) se prvo doda u state.stockPendingItems i
+// prikaže na dnu modala, a tek "Sačuvaj" upisuje sve odjednom. Ovo je
+// namerno — kad stigne veći broj artikala odjednom, korisnik ne mora da
+// čeka/potvrđuje posle svakog pojedinačnog dodavanja.
+function renderStockPendingList() {
+  el.stockPendingList.innerHTML = "";
+  el.stockSaveBtnCount.textContent = String(state.stockPendingItems.length);
+  if (state.stockPendingItems.length === 0) {
+    el.stockPendingList.hidden = true;
+    return;
+  }
+  el.stockPendingList.hidden = false;
+  state.stockPendingItems.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.className = "stock-pending-row";
+    const label =
+      item.type === "device" ? `${item.productName} — SN ${item.serial}` : `${item.productName} — +${item.qty} kom`;
+    row.appendChild(el_("span", null, label));
+    const delBtn = el_("button", "icon-btn", "×");
+    delBtn.type = "button";
+    delBtn.title = "Ukloni iz liste";
+    delBtn.addEventListener("click", () => {
+      state.stockPendingItems.splice(idx, 1);
+      renderStockPendingList();
+    });
+    row.appendChild(delBtn);
+    el.stockPendingList.appendChild(row);
+  });
+}
+
 function openStockAddModal() {
   populateStockProductSelect(el.stockDeviceProduct);
   syncStockModalProductType();
@@ -4326,10 +4361,17 @@ function openStockAddModal() {
   el.stockOcrPreviews.innerHTML = "";
   el.stockOcrResult.hidden = true;
   state.ocrCandidateSerials = [];
+  state.stockPendingItems = [];
+  renderStockPendingList();
   el.stockAddModal.hidden = false;
 }
 
 function closeStockAddModal() {
+  if (state.stockPendingItems.length > 0) {
+    const ok = confirm(`Imaš ${state.stockPendingItems.length} nesačuvanih stavki u listi. Zatvoriti bez čuvanja?`);
+    if (!ok) return;
+  }
+  state.stockPendingItems = [];
   el.stockAddModal.hidden = true;
   renderStockDevices();
   renderStockConnectors();
@@ -4341,26 +4383,60 @@ el.stockAddModal.addEventListener("click", (e) => {
   if (e.target === el.stockAddModal) closeStockAddModal();
 });
 
-el.stockDeviceAddBtn.addEventListener("click", async () => {
+el.stockSaveBtn.addEventListener("click", async () => {
+  if (state.stockPendingItems.length === 0) {
+    el.stockAddModal.hidden = true;
+    return;
+  }
+  let savedCount = 0;
+  let failedCount = 0;
+  for (const item of state.stockPendingItems) {
+    if (item.type === "device") {
+      const saved = await addDeviceUnit(item.productId, item.serial, { silent: true });
+      if (saved) savedCount++;
+      else failedCount++;
+    } else {
+      const ok = await adjustConnectorStock(item.productId, item.qty, { silent: true });
+      if (ok) savedCount++;
+      else failedCount++;
+    }
+  }
+  state.stockPendingItems = [];
+  renderStockDevices();
+  renderStockConnectors();
+  showToast(
+    failedCount ? `Sačuvano ${savedCount}, ${failedCount} nije uspelo (proveri duplikate serijskih brojeva)` : `Sačuvano ${savedCount} stavki`,
+    failedCount > 0
+  );
+  el.stockAddModal.hidden = true;
+});
+
+el.stockDeviceAddBtn.addEventListener("click", () => {
   const productId = el.stockDeviceProduct.value;
+  const opt = el.stockDeviceProduct.selectedOptions[0];
   const serial = el.stockDeviceSerial.value.trim();
   if (!productId || !serial) {
     showToast("Izaberi uređaj i unesi serijski broj", true);
     return;
   }
-  const saved = await addDeviceUnit(productId, serial);
-  if (saved) el.stockDeviceSerial.value = "";
+  state.stockPendingItems.push({ type: "device", productId, productName: opt.textContent, serial });
+  el.stockDeviceSerial.value = "";
+  renderStockPendingList();
 });
 
-el.stockConnectorQtyAddBtn.addEventListener("click", async () => {
+el.stockConnectorQtyAddBtn.addEventListener("click", () => {
   const productId = el.stockDeviceProduct.value;
+  const opt = el.stockDeviceProduct.selectedOptions[0];
   const qty = parseInt(el.stockConnectorQtyInput.value, 10);
   if (!productId || !qty || qty <= 0) {
     showToast("Izaberi konektor i unesi količinu veću od 0", true);
     return;
   }
-  await adjustConnectorStock(productId, qty);
+  const existing = state.stockPendingItems.find((it) => it.type === "connector" && it.productId === productId);
+  if (existing) existing.qty += qty;
+  else state.stockPendingItems.push({ type: "connector", productId, productName: opt.textContent, qty });
   el.stockConnectorQtyInput.value = "";
+  renderStockPendingList();
 });
 
 function renderStockConnectors() {
@@ -4381,43 +4457,25 @@ function renderStockConnectors() {
     header.appendChild(el_("div", "stock-type-sublabel", "na stanju"));
     section.appendChild(header);
 
-    if (canEdit("stock")) {
-      const controls = document.createElement("div");
-      controls.className = "stock-connector-controls";
-      const input = document.createElement("input");
-      input.type = "number";
-      input.step = "1";
-      input.placeholder = "+/-";
-      input.className = "stock-connector-input";
-      const applyBtn = el_("button", "icon-btn", "Primeni");
-      applyBtn.type = "button";
-      applyBtn.addEventListener("click", async () => {
-        const delta = parseInt(input.value, 10);
-        if (Number.isNaN(delta) || delta === 0) return;
-        await adjustConnectorStock(p.id, delta);
-        input.value = "";
-      });
-      controls.appendChild(input);
-      controls.appendChild(applyBtn);
-      section.appendChild(controls);
-    }
-
     el.stockConnectorsList.appendChild(section);
   }
 }
 
-async function adjustConnectorStock(productId, delta) {
+async function adjustConnectorStock(productId, delta, opts = {}) {
   const product = state.products.find((p) => p.id === productId);
-  if (!product) return;
+  if (!product) return false;
   const newQty = Math.max(0, (product.stock_quantity || 0) + delta);
   const { error } = await supabase.from("products").update({ stock_quantity: newQty }).eq("id", productId);
   if (error) {
-    showToast("Greška: " + error.message, true);
-    return;
+    if (!opts.silent) showToast("Greška: " + error.message, true);
+    return false;
   }
   product.stock_quantity = newQty;
-  renderStockConnectors();
-  showToast("Sačuvano");
+  if (!opts.silent) {
+    renderStockConnectors();
+    showToast("Sačuvano");
+  }
+  return true;
 }
 
 // ---------- OCR: čitanje serijskog broja sa slike (Tesseract.js, u browseru) ----------
@@ -4532,8 +4590,9 @@ el.stockOcrFile.addEventListener("change", async () => {
   }
 });
 
-el.stockOcrConfirmBtn.addEventListener("click", async () => {
+el.stockOcrConfirmBtn.addEventListener("click", () => {
   const productId = el.stockDeviceProduct.value;
+  const opt = el.stockDeviceProduct.selectedOptions[0];
   if (!productId) {
     showToast("Izaberi uređaj", true);
     return;
@@ -4544,19 +4603,17 @@ el.stockOcrConfirmBtn.addEventListener("click", async () => {
     return;
   }
 
-  let added = 0;
   for (const c of toAdd) {
-    const saved = await addDeviceUnit(productId, c.text.trim(), { silent: true });
-    if (saved) added++;
+    state.stockPendingItems.push({ type: "device", productId, productName: opt.textContent, serial: c.text.trim() });
   }
-  renderStockDevices();
-  showToast(`Dodato ${added} od ${toAdd.length} na stanje`);
+  showToast(`Dodato ${toAdd.length} u listu za čuvanje`);
 
   el.stockOcrResult.hidden = true;
   el.stockOcrPreviews.innerHTML = "";
   el.stockOcrFile.value = "";
   el.stockOcrStatus.textContent = "";
   state.ocrCandidateSerials = [];
+  renderStockPendingList();
 });
 
 // ---------- početna (dashboard) ----------
