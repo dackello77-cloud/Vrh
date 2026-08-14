@@ -2000,31 +2000,36 @@ button.home-tile-btn {
 
   .home-stats-grid {
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    grid-auto-rows: 1fr;
+    gap: 12px;
     margin-bottom: 24px;
+    min-height: calc(100vh - 180px);
   }
 
   .home-stat-card {
-    padding: 14px;
-    border-radius: 12px;
+    padding: 20px 16px;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .home-stat-label {
-    font-size: 10px;
-    margin-bottom: 4px;
+    font-size: 12px;
+    margin-bottom: 8px;
   }
 
   .home-stat-value {
-    font-size: 22px;
+    font-size: 30px;
   }
 
   .home-action-label {
-    font-size: 12px;
+    font-size: 18px;
     text-align: center;
   }
 
   .home-tile-btn {
-    min-height: 90px;
+    min-height: 130px;
   }
 
   /* Sve 4 pločice na Početnoj pune boje (ne samo obojena ivica kao na
@@ -2058,6 +2063,14 @@ button.home-tile-btn {
     border-color: #7c3aed;
   }
   .home-stat-card-purple .home-action-label {
+    color: #fff;
+  }
+
+  .home-stat-card-red {
+    background: linear-gradient(135deg, var(--red), #8f1f1f);
+    border-color: var(--red);
+  }
+  .home-stat-card-red .home-action-label {
     color: #fff;
   }
 }
