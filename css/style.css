@@ -2011,7 +2011,9 @@ button.home-tile-btn {
     border-radius: 16px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-end;
+    align-items: center;
+    text-align: center;
   }
 
   .home-stat-label {
@@ -2020,7 +2022,7 @@ button.home-tile-btn {
   }
 
   .home-stat-value {
-    font-size: 30px;
+    font-size: 35px;
   }
 
   .home-action-label {
