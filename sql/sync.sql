@@ -259,6 +259,14 @@ begin
       where kv.key::date >= window_start and kv.key::date <= current_date
       order by kv.key asc
     loop
+      -- Vikend/praznik: nikad se ne izvlaci iz API-ja, cak i ako izvor vrati
+      -- stvarnu (nenultu) vrednost za taj dan. Subota i nedelja se uvek samo
+      -- preslikavaju iz petka (carry_forward_last_working_day), a stvarna
+      -- promena se registruje tek u ponedeljak kad se uporedi sa petkom.
+      if is_non_working_day(d.date_key::date) then
+        continue;
+      end if;
+
       eld_count := d.eld_count;
       -- eld_count = 0 znaci da izvor jos nije azurirao taj dan (placeholder).
       -- Preskacemo da ne bismo obrisali stvarne podatke nulom.
