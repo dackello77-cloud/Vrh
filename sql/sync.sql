@@ -275,7 +275,16 @@ begin
       end if;
 
       prev_date := (d.date_key::date - interval '1 day')::date::text;
-      prev_count := (company_rec.dates -> prev_date ->> 'eld_count')::int;
+      -- Ako je prethodni dan vikend/praznik, njegova "prava" vrednost je
+      -- preslikana iz petka (carry_forward_last_working_day), ne stvarna API
+      -- vrednost za taj dan (izvor je i dalje moze imati realan broj za
+      -- subotu/nedelju, ali se on namerno ne koristi - isto pravilo kao gore).
+      -- Zato se za vikend prethodni dan uvek ide direktno na truck_counts.
+      if is_non_working_day(prev_date::date) then
+        prev_count := null;
+      else
+        prev_count := (company_rec.dates -> prev_date ->> 'eld_count')::int;
+      end if;
       if prev_count is null or prev_count = 0 then
         select total into prev_count
         from truck_counts
