@@ -386,6 +386,7 @@ async function loadCounts(year, month) {
       .select("*")
       .gte("date", first)
       .lte("date", last)
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
 
     if (error) {
@@ -2075,19 +2076,25 @@ function buildReportList(items, valueLabel, totalLabel) {
 // report's "Dodati uređaji" section and computeCurrentDetailRows() below.
 function computeAddedItems(list, counts, year, month, day) {
   const out = [];
+  const todayStr = dateStr(year, month, day);
   for (const c of list) {
     const dc = counts[c.id] || {};
     const entryCol = c.entry_column || "advanced";
-    const val = dc[day]?.[entryCol];
+    const billingStartsOn = c.billing_starts_on || null;
+    const total = dc[day]?.total;
+    // Dan kad se završava trial (billing_starts_on je baš danas): računa se
+    // ceo trenutni broj kamiona, ne samo ono što je promenjeno baš tog dana —
+    // firma dotad nije naplaćivana nijedan dan (bila je u trial-u), pa nema
+    // ranijeg obračunatog broja da se od ukupnog izdvoji samo razlika.
+    const isTrialEndDay = billingStartsOn === todayStr;
+    const val = isTrialEndDay && total > 0 ? total : dc[day]?.[entryCol];
     if (val && val > 0) {
-      const billingStartsOn = c.billing_starts_on || null;
       const isFree = isFreeDay(year, month, day, billingStartsOn);
       // treat the report's date as "today": only compare against days
       // strictly before it, so a bigger count that happened afterward
       // (out of scope for a historical report) can't affect this day,
       // and merely re-reaching an already-billed past peak isn't orange.
       const dayPriorMax = priorMax(dc, day, year, month, billingStartsOn);
-      const total = dc[day]?.total;
       const color = entryColor(dc[day], entryCol, total, dayPriorMax, isFree);
       // billable quantity is only the part that's a genuinely new record —
       // e.g. if the count dipped and this day's raw addition climbs back
@@ -2709,7 +2716,11 @@ async function loadOrderItems() {
   const all = [];
   let from = 0;
   while (true) {
-    const { data, error } = await supabase.from("order_items").select("*").range(from, from + pageSize - 1);
+    const { data, error } = await supabase
+      .from("order_items")
+      .select("*")
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
     if (error) {
       showToast("Greška pri učitavanju stavki porudžbina: " + error.message, true);
       break;
@@ -3607,6 +3618,7 @@ async function loadCompanyPrices() {
     const { data, error } = await supabase
       .from("company_product_prices")
       .select("*")
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) {
       showToast("Greška pri učitavanju cena: " + error.message, true);
@@ -3770,6 +3782,7 @@ async function loadCompanyPriceLookup() {
     const { data, error } = await supabase
       .from("company_price_lookup")
       .select("*")
+      .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) {
       showToast("Greška pri učitavanju cenovnika: " + error.message, true);
