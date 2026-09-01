@@ -44,6 +44,13 @@ create table if not exists orders (
   updated_at timestamptz not null default now()
 );
 
+-- storno: porudzbina ostaje u istoriji (radi racunovodstva), samo se
+-- markira kao stornirana - uredjaji/konektori se pri storniranju vracaju
+-- na stanje (vidi cancelOrder() u js/app.js), narocito posle iako je red
+-- vec postojao pre ove kolone.
+alter table orders add column if not exists cancelled boolean not null default false;
+alter table orders add column if not exists cancelled_at timestamptz;
+
 create index if not exists orders_date_idx on orders (order_date);
 create index if not exists orders_company_idx on orders (company_id);
 

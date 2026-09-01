@@ -83,6 +83,7 @@ const state = {
   month: now.getMonth(), // 0-indexed
   companies: [],
   counts: {}, // { companyId: { day: { total, start, basic, advanced } } }
+  prevMonthTailCounts: {}, // { companyId: total } — poslednji dan prethodnog meseca, za 1. u mesecu dok danasnji sync ne stigne
   editingCompanyId: null,
   hasScrolledToToday: false,
   searchQuery: "",
@@ -92,6 +93,7 @@ const state = {
   newCompanyQueue: [],
   manuallyVisibleCompanyIds: loadManuallyVisibleCompanyIds(), // firme sačuvane iz "Nova firma iz API-ja" modala — vidljive u Pregled kamiona i pre nego što stigne prva ELD sinhronizacija brojeva
   reportType: "daily", // "daily" | "behind" | "current"
+  lastCurrentReport: null, // { dateValue, rows } — poslednje generisan Current izveštaj, za "Pošalji u naplatu"
   naplata: [],
   naplataLoaded: false,
   naplataTab: "active", // "active" | "closed"
@@ -111,6 +113,7 @@ const state = {
   deviceUnitsLoaded: false,
   ocrCandidateSerials: [], // [{ text, checked }] radni spisak dok se pregledaju OCR rezultati
   stockPendingItems: [], // [{ type:"device", productId, productName, serial } | { type:"connector", productId, productName, qty }] - lista u "+ Dodaj" modalu pre klika na Sačuvaj
+  expandedStockDeviceTypes: new Set(), // product_id skup — koji spiskovi serijskih brojeva su otvoreni (podrazumevano zatvoreni, da lista ne bude beskrajna)
   settingsCompanySearch: "",
   settingsCompanyPriceSearch: "",
   orders: [],
@@ -266,8 +269,11 @@ const el = {
   reportDateLabel: document.getElementById("reportDateLabel"),
   reportDate: document.getElementById("reportDate"),
   generateReportBtn: document.getElementById("generateReportBtn"),
+  sendCurrentToNaplataBtn: document.getElementById("sendCurrentToNaplataBtn"),
   downloadPdfBtn: document.getElementById("downloadPdfBtn"),
   reportContent: document.getElementById("reportContent"),
+  syncStatus: document.getElementById("syncStatus"),
+  reportSyncStatus: document.getElementById("reportSyncStatus"),
   prevMonth: document.getElementById("prevMonth"),
   nextMonth: document.getElementById("nextMonth"),
   monthLabel: document.getElementById("monthLabel"),
@@ -412,15 +418,127 @@ async function loadCounts(year, month) {
   return byCompany;
 }
 
+// 1. u mesecu, pre nego sto danasnji ELD sync (13h UTC) upise prvi red za
+// novi mesec, state.counts[company.id] za taj mesec jos nema nista na dan 1,
+// pa "yesterday" (d - 1 === 0) ne postoji u toj tabeli - carry-forward
+// placeholder ispod bi ostao prazan. Ucitaj poslednji POSTOJECI total pre
+// pocetka meseca, po firmi - ne nuzno tacno kalendarski poslednji dan
+// prethodnog meseca, jer taj dan moze da nedostaje (npr. ELD worker nije
+// odradio sync tog dana) - u tom slucaju uzima sledeci najskoriji dan koji
+// stvarno ima podatak, isti princip kao fallback u collect_eld_sync (sql/sync.sql).
+async function loadPrevMonthLastDayCounts(year, month) {
+  const firstOfMonth = dateStr(year, month, 1);
+  const cutoff = new Date(year, month, 1);
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffDate = dateStr(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate());
+
+  const { data, error } = await supabase
+    .from("truck_counts")
+    .select("company_id, total, date")
+    .gte("date", cutoffDate)
+    .lt("date", firstOfMonth)
+    .order("date", { ascending: false });
+
+  if (error) return {};
+
+  // Poredjano opadajuce po datumu - prvo pojavljivanje po firmi je njen
+  // najskoriji poznat total pre ovog meseca.
+  const byCompany = {};
+  for (const row of data ?? []) {
+    if (!(row.company_id in byCompany)) byCompany[row.company_id] = row.total;
+  }
+  return byCompany;
+}
+
+async function loadPrevMonthTailIfCurrent(year, month) {
+  if (year === now.getFullYear() && month === now.getMonth()) {
+    return await loadPrevMonthLastDayCounts(year, month);
+  }
+  return {};
+}
+
+// ---------- status poslednje ELD sinhronizacije ----------
+// collect_eld_sync() (sql/sync.sql) upisuje last_collect_at/last_collect_summary
+// u eld_sync_state pri svakom pokusaju (uspeh, preskoceno zbog neradnog dana,
+// ili greska) - ovde se to samo cita i prikazuje na vrhu Pregled kamiona i
+// Izvestaj stranice, da se odmah vidi ako automatski cron u 13h UTC nije
+// prosao (umesto da se to otkrije tek kad tabela ostane prazna).
+async function loadSyncStatus() {
+  const { data, error } = await supabase
+    .from("eld_sync_state")
+    .select("last_collect_at, last_collect_summary")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data;
+}
+
+// Uvek prikazuje Europe/Belgrade vreme, bez obzira na vremensku zonu
+// racunara/browsera na kom je app otvoren (sync je vezan za 13h UTC = 15h
+// Beograd leti, pa lokalno vreme korisnika samo zbunjuje ako je drugacija zona).
+function formatBelgradeDateTime(dt) {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Belgrade",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(dt);
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get("day")}.${get("month")}. u ${get("hour")}:${get("minute")}`;
+}
+
+function formatSyncStatusText(status) {
+  if (!status || !status.last_collect_at) {
+    return { text: "Sinhronizacija: još nikad pokrenuta", isError: false };
+  }
+  const dt = new Date(status.last_collect_at);
+  const timeStr = formatBelgradeDateTime(dt);
+  const summary = status.last_collect_summary || {};
+
+  if (summary.error) {
+    return { text: `Poslednja sinhronizacija ${timeStr} — GREŠKA: ${summary.error}`, isError: true };
+  }
+  if (summary.skipped) {
+    return {
+      text: `Poslednja sinhronizacija ${timeStr} — preskočeno (${summary.reason || "neradni dan"})`,
+      isError: false,
+    };
+  }
+  const rowsWritten = summary.rows_written ?? 0;
+  const companiesSynced = summary.companies_synced ?? 0;
+  const warn = rowsWritten === 0;
+  return {
+    text:
+      `Poslednja sinhronizacija ${timeStr} — ${companiesSynced} firmi, ${rowsWritten} redova` +
+      (warn ? " (upozorenje: 0 redova upisano)" : ""),
+    isError: warn,
+  };
+}
+
+async function refreshSyncStatusUI() {
+  const status = await loadSyncStatus();
+  const { text, isError } = formatSyncStatusText(status);
+  for (const node of [el.syncStatus, el.reportSyncStatus]) {
+    if (!node) continue;
+    node.textContent = text;
+    node.classList.toggle("sync-status-error", isError);
+  }
+}
+
 async function refreshAll() {
-  const [companies, counts] = await Promise.all([
+  const [companies, counts, prevMonthTailCounts] = await Promise.all([
     loadCompanies(),
     loadCounts(state.year, state.month),
+    loadPrevMonthTailIfCurrent(state.year, state.month),
   ]);
   state.companies = companies;
   state.counts = counts;
+  state.prevMonthTailCounts = prevMonthTailCounts;
   render();
   scrollToToday();
+  refreshSyncStatusUI();
 }
 
 // ---------- coloring rule ----------
@@ -536,8 +654,15 @@ function render() {
   const hasDataThisMonth = (company) => {
     if (state.manuallyVisibleCompanyIds.has(company.id)) return true;
     const counts = state.counts[company.id];
-    if (!counts) return false;
-    return Object.values(counts).some((day) => day && day.total && day.total > 0);
+    if (counts && Object.values(counts).some((day) => day && day.total && day.total > 0)) {
+      return true;
+    }
+    // 1. u mesecu, pre nego sto danasnji sync upise prvi red, ovaj (novi)
+    // mesec jos nema nijedan podatak - ali firma i dalje treba da se vidi
+    // ako je imala kamione poslednjeg dana prethodnog meseca (carried-forward
+    // placeholder u renderCompanyRow ce prikazati taj broj).
+    const prevTail = (state.prevMonthTailCounts || {})[company.id];
+    return !!(prevTail && prevTail > 0);
   };
   const withData = state.companies.filter(hasDataThisMonth);
 
@@ -673,11 +798,16 @@ function renderCompanyRow(company, nDays, todayDay) {
     if (isBillingStartDay) tdT.title = "Kraj besplatnog perioda — naplata počinje";
 
     // ELD sync runs at 15:00; before that today's total isn't in yet, so
-    // carry yesterday's number forward as a placeholder.
+    // carry yesterday's number forward as a placeholder. Na 1. u mesecu
+    // "juce" nije u ovoj (novoj) mesecnoj tabeli, nego je poslednji dan
+    // prethodnog meseca (state.prevMonthTailCounts).
     if (isToday && (dayData.total === undefined || dayData.total === null)) {
-      const yesterday = (state.counts[company.id] || {})[d - 1];
-      if (yesterday && yesterday.total !== undefined && yesterday.total !== null) {
-        tdT.textContent = fmtCell(yesterday.total);
+      const yesterdayTotal =
+        d === 1
+          ? (state.prevMonthTailCounts || {})[company.id]
+          : (state.counts[company.id] || {})[d - 1]?.total;
+      if (yesterdayTotal !== undefined && yesterdayTotal !== null) {
+        tdT.textContent = fmtCell(yesterdayTotal);
         tdT.classList.add("carried-forward");
         tdT.title = "Preneto sa juče — čeka ažuriranje u 15h";
       }
@@ -991,6 +1121,7 @@ el.prevMonth.addEventListener("click", async () => {
     state.year -= 1;
   }
   state.counts = await loadCounts(state.year, state.month);
+  state.prevMonthTailCounts = await loadPrevMonthTailIfCurrent(state.year, state.month);
   render();
 });
 
@@ -1001,6 +1132,7 @@ el.nextMonth.addEventListener("click", async () => {
     state.year += 1;
   }
   state.counts = await loadCounts(state.year, state.month);
+  state.prevMonthTailCounts = await loadPrevMonthTailIfCurrent(state.year, state.month);
   render();
 });
 
@@ -1050,9 +1182,12 @@ async function manualSync() {
     }
 
     state.counts = await loadCounts(state.year, state.month);
+    state.prevMonthTailCounts = await loadPrevMonthTailIfCurrent(state.year, state.month);
     render();
+    refreshSyncStatusUI();
   } catch (error) {
     showToast("Greška pri sinhronizaciji: " + error.message, true);
+    refreshSyncStatusUI();
   } finally {
     el.syncBtn.disabled = false;
     el.syncBtn.textContent = originalText;
@@ -2029,6 +2164,96 @@ el.downloadPdfBtn.addEventListener("click", () => {
     .save();
 });
 
+// Rucno "Posalji u naplatu" za Current izvestaj — upisuje tacno ono sto je
+// prikazano na ekranu (state.lastCurrentReport, postavljeno u
+// generateCurrentReport) kao naplata red po firmi, source='manual'.
+// Ponovni klik za isti datum azurira postojeci red umesto da pravi
+// duplikat — osim ako je covek vec poceo da ga popunjava (broj fakture ili
+// naplaceno/nenaplaceno vec upisano), isti princip zastite kao kod
+// upsertAutoNaplataRow.
+el.sendCurrentToNaplataBtn.addEventListener("click", async () => {
+  if (state.reportType !== "current") {
+    showToast("Ova opcija je samo za Current izveštaj", true);
+    return;
+  }
+  if (!state.lastCurrentReport || !el.reportContent.dataset.rendered) {
+    showToast("Prvo generiši izveštaj", true);
+    return;
+  }
+  const { dateValue, rows } = state.lastCurrentReport;
+  if (rows.length === 0) {
+    showToast("Nema redova za slanje", true);
+    return;
+  }
+
+  const originalText = el.sendCurrentToNaplataBtn.textContent;
+  el.sendCurrentToNaplataBtn.disabled = true;
+  el.sendCurrentToNaplataBtn.textContent = "Šaljem...";
+
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+
+  try {
+    for (const r of rows) {
+      const { data: existing, error: selErr } = await supabase
+        .from("naplata")
+        .select("id, invoice_number, collected")
+        .eq("company_id", r.companyId)
+        .eq("invoice_date", dateValue)
+        .eq("cycle", "current")
+        .eq("source", "manual")
+        .maybeSingle();
+
+      if (selErr) {
+        console.error(selErr);
+        skipped++;
+        continue;
+      }
+
+      if (!existing) {
+        const { error } = await supabase.from("naplata").insert({
+          company_id: r.companyId,
+          company_name: r.name,
+          invoice_date: dateValue,
+          cycle: "current",
+          amount: r.amount,
+          source: "manual",
+        });
+        if (error) {
+          console.error(error);
+          skipped++;
+        } else {
+          created++;
+        }
+        continue;
+      }
+
+      if (existing.invoice_number === null && existing.collected === null) {
+        const { error } = await supabase.from("naplata").update({ amount: r.amount }).eq("id", existing.id);
+        if (error) {
+          console.error(error);
+          skipped++;
+        } else {
+          updated++;
+        }
+      } else {
+        skipped++;
+      }
+    }
+
+    await loadNaplata();
+    afterNaplataLoad();
+    showToast(
+      `Poslato u naplatu: ${created} novo, ${updated} ažurirano` +
+        (skipped ? `, ${skipped} preskočeno (već obrađeno ili greška)` : "")
+    );
+  } finally {
+    el.sendCurrentToNaplataBtn.disabled = false;
+    el.sendCurrentToNaplataBtn.textContent = originalText;
+  }
+});
+
 function el_(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -2492,9 +2717,10 @@ async function generateBehindReport(dateValue) {
 
 async function generateCurrentReport(dateValue) {
   if (!dateValue) return;
-  const [y, m] = dateValue.split("-").map(Number);
+  const [y, m, d] = dateValue.split("-").map(Number);
   const year = y;
   const month = m - 1;
+  const day = d;
 
   el.reportContent.innerHTML = "";
   el.reportContent.appendChild(el_("p", "section-hint", "Učitavanje..."));
@@ -2507,20 +2733,24 @@ async function generateCurrentReport(dateValue) {
   const rows = [];
   for (const c of currentCompanies) {
     const dc = counts[c.id] || {};
-    const count = dc[1]?.total;
+    const count = dc[day]?.total;
     if (count === undefined || count === null) continue;
     const price = c.price || 0;
     const amount = count * price;
-    rows.push({ name: c.name, count, price, amount });
+    rows.push({ name: c.name, count, price, amount, companyId: c.id });
   }
   const grandTotal = rows.reduce((acc, r) => acc + r.amount, 0);
+
+  // Pamti tacno ove redove (i tacan izabrani datum) da "Posalji u naplatu"
+  // upise ono sto je stvarno prikazano na ekranu, bez ponovnog racunanja.
+  state.lastCurrentReport = { dateValue, rows };
 
   el.reportContent.innerHTML = "";
   el.reportContent.dataset.rendered = "1";
 
   el.reportContent.appendChild(el_(
     "p", "section-hint",
-    `Stanje na 1.${pad(month + 1)}.${year}, puna mesečna cena za sve current firme`
+    `Stanje na ${day}.${pad(month + 1)}.${year}, puna mesečna cena za sve current firme`
   ));
 
   const section = el_("section", "report-section");
@@ -2528,7 +2758,7 @@ async function generateCurrentReport(dateValue) {
   table.className = "report-table";
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  for (const h of ["Firma", "Uređaji (1. u mesecu)", "Cena po uređaju", "Iznos"]) {
+  for (const h of ["Firma", `Uređaji (${day}. u mesecu)`, "Cena po uređaju", "Iznos"]) {
     headRow.appendChild(el_("th", null, h));
   }
   thead.appendChild(headRow);
@@ -2537,7 +2767,7 @@ async function generateCurrentReport(dateValue) {
   const tbody = document.createElement("tbody");
   if (rows.length === 0) {
     const tr = document.createElement("tr");
-    const td = el_("td", "section-hint", "Nema current firmi sa podacima za 1. u mesecu");
+    const td = el_("td", "section-hint", `Nema current firmi sa podacima za ${day}. u mesecu`);
     td.colSpan = 4;
     td.style.textAlign = "center";
     tr.appendChild(td);
@@ -2780,13 +3010,108 @@ function formatOrderItemLine(name, price, count) {
   return line;
 }
 
+// ---------- storno porudžbine (porudžbina ostaje, uređaji/konektori se vraćaju na stanje) ----------
+
+async function cancelOrder(order) {
+  if (order.cancelled) return;
+  if (
+    !confirm(
+      `Sigurno da storniraš porudžbinu za "${order.company_name}"?\n\nUređaji i konektori sa ove porudžbine vraćaju se na stanje.`
+    )
+  ) {
+    return;
+  }
+
+  const { error: releaseError } = await supabase
+    .from("device_units")
+    .update({ status: "in_stock", order_id: null, order_item_id: null, shipped_at: null })
+    .eq("order_id", order.id);
+  if (releaseError) {
+    showToast("Greška pri vraćanju uređaja na stanje: " + releaseError.message, true);
+    return;
+  }
+  for (const u of state.deviceUnits) {
+    if (u.order_id === order.id) {
+      u.status = "in_stock";
+      u.order_id = null;
+      u.order_item_id = null;
+    }
+  }
+
+  const items = state.orderItems.filter((it) => it.order_id === order.id);
+  for (const it of items) {
+    const product = state.products.find((p) => p.id === it.product_id);
+    if (product && product.type === "connector") {
+      const qty = parseFloat(it.count) || 0;
+      const newQty = (product.stock_quantity || 0) + qty;
+      const { error: qtyError } = await supabase.from("products").update({ stock_quantity: newQty }).eq("id", product.id);
+      if (!qtyError) product.stock_quantity = newQty;
+    }
+  }
+  // legacy porudzbine (flat connector_* kolone, bez order_items) - iste
+  // konektore vratimo po istom principu kao gore.
+  if (items.length === 0 && order.connector_id) {
+    const product = state.products.find((p) => p.id === order.connector_id);
+    if (product && product.type === "connector") {
+      const qty = parseFloat(order.connector_count) || 0;
+      const newQty = (product.stock_quantity || 0) + qty;
+      const { error: qtyError } = await supabase.from("products").update({ stock_quantity: newQty }).eq("id", product.id);
+      if (!qtyError) product.stock_quantity = newQty;
+    }
+  }
+
+  const cancelledAt = new Date().toISOString();
+  const { error } = await supabase.from("orders").update({ cancelled: true, cancelled_at: cancelledAt }).eq("id", order.id);
+  if (error) {
+    showToast("Greška pri storniranju: " + error.message, true);
+    return;
+  }
+
+  order.cancelled = true;
+  order.cancelled_at = cancelledAt;
+  renderOrders();
+  showToast("Porudžbina stornirana — uređaji/konektori vraćeni na stanje");
+}
+
+// Samo skida oznaku storna - NE dodeljuje ponovo uređaje/konektore
+// automatski (mogli su u međuvremenu biti poslati na drugoj porudžbini) -
+// po potrebi ih ručno ponovo izabrati kroz Izmeni.
+async function restoreOrder(order) {
+  if (!order.cancelled) return;
+  if (
+    !confirm(
+      `Vratiti porudžbinu za "${order.company_name}" iz storna?\n\nNapomena: uređaji/konektori se NEĆE automatski ponovo dodeliti — po potrebi ih ponovo izaberi kroz Izmeni.`
+    )
+  ) {
+    return;
+  }
+
+  const { error } = await supabase.from("orders").update({ cancelled: false, cancelled_at: null }).eq("id", order.id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  order.cancelled = false;
+  order.cancelled_at = null;
+  renderOrders();
+  showToast("Storno poništen");
+}
+
 function buildOrderRow(order, rowIndex) {
   const tr = document.createElement("tr");
-  tr.className = `orders-row ${rowIndex % 2 === 0 ? "orders-row-even" : "orders-row-odd"}`;
+  tr.className = `orders-row ${rowIndex % 2 === 0 ? "orders-row-even" : "orders-row-odd"}${
+    order.cancelled ? " orders-row-cancelled" : ""
+  }`;
   tr.appendChild(el_("td", null, order.order_date || "—"));
   tr.appendChild(el_("td", null, order.qb_invoice_number || "—"));
   tr.appendChild(el_("td", null, order.woocommerce_order_number || "—"));
-  tr.appendChild(el_("td", "orders-company-cell", order.company_name));
+
+  const companyTd = el_("td", "orders-company-cell", order.company_name);
+  if (order.cancelled) {
+    companyTd.appendChild(document.createTextNode(" "));
+    companyTd.appendChild(el_("span", "badge orders-cancelled-badge", "STORNIRANO"));
+  }
+  tr.appendChild(companyTd);
 
   const itemsTd = document.createElement("td");
   itemsTd.className = "orders-items-cell";
@@ -2829,15 +3154,36 @@ function buildOrderRow(order, rowIndex) {
   tr.appendChild(statusTd);
 
   const editTd = document.createElement("td");
+  editTd.className = "orders-actions-cell";
   if (canEdit("orders")) {
-    const editBtn = el_("button", "icon-btn icon-pencil", "✎");
-    editBtn.type = "button";
-    editBtn.title = "Izmeni porudžbinu";
-    editBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      openOrderForm("edit", order);
-    });
-    editTd.appendChild(editBtn);
+    if (!order.cancelled) {
+      const editBtn = el_("button", "icon-btn icon-pencil", "✎");
+      editBtn.type = "button";
+      editBtn.title = "Izmeni porudžbinu";
+      editBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openOrderForm("edit", order);
+      });
+      editTd.appendChild(editBtn);
+
+      const cancelBtn = el_("button", "icon-btn icon-cancel-order", "⊘");
+      cancelBtn.type = "button";
+      cancelBtn.title = "Storniraj porudžbinu — uređaji/konektori se vraćaju na stanje";
+      cancelBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        cancelOrder(order);
+      });
+      editTd.appendChild(cancelBtn);
+    } else {
+      const restoreBtn = el_("button", "icon-btn icon-restore-order", "↺");
+      restoreBtn.type = "button";
+      restoreBtn.title = "Poništi storno";
+      restoreBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        restoreOrder(order);
+      });
+      editTd.appendChild(restoreBtn);
+    }
   }
   tr.appendChild(editTd);
 
@@ -3008,6 +3354,11 @@ function buildNewOrderItemRow(item) {
     item.productId = productSelect.value;
     const autoPrice = findCompanyPriceForProduct(getSelectedNewOrderCompanyId(), item.productId);
     if (autoPrice !== null) item.price = autoPrice;
+    const newProduct = state.products.find((p) => p.id === item.productId);
+    if (newProduct && newProduct.type === "device") {
+      if (!item.selectedSerials) item.selectedSerials = [];
+      item.count = item.selectedSerials.length;
+    }
     renderNewOrderItems();
   });
 
@@ -3022,15 +3373,32 @@ function buildNewOrderItemRow(item) {
     updateNewOrderTotal();
   });
 
-  const countInput = document.createElement("input");
-  countInput.type = "number";
-  countInput.step = "1";
-  countInput.min = "1";
-  countInput.value = item.count;
-  countInput.addEventListener("input", () => {
-    item.count = countInput.value;
-    updateNewOrderTotal();
-  });
+  // Za uređaje (PT30/PT40 i sl.): nema ručnog unosa količine — količina se
+  // postavlja automatski na broj čekiranih serijskih brojeva (ispod). Za
+  // konektore ostaje ručni unos količine, kao i pre.
+  const product = state.products.find((p) => p.id === item.productId);
+  const isDevice = product && product.type === "device";
+
+  let countInput = null;
+  let qtyBadge = null;
+  if (isDevice) {
+    if (!item.selectedSerials) item.selectedSerials = [];
+    item.count = item.selectedSerials.length;
+    qtyBadge = document.createElement("span");
+    qtyBadge.className = "new-order-item-qty-badge";
+    qtyBadge.title = "Količina — automatski, broj izabranih serijskih brojeva ispod";
+    qtyBadge.textContent = String(item.selectedSerials.length);
+  } else {
+    countInput = document.createElement("input");
+    countInput.type = "number";
+    countInput.step = "1";
+    countInput.min = "1";
+    countInput.value = item.count;
+    countInput.addEventListener("input", () => {
+      item.count = countInput.value;
+      updateNewOrderTotal();
+    });
+  }
 
   const removeBtn = document.createElement("button");
   removeBtn.type = "button";
@@ -3045,26 +3413,32 @@ function buildNewOrderItemRow(item) {
 
   row.appendChild(productSelect);
   row.appendChild(priceInput);
-  row.appendChild(countInput);
+  row.appendChild(isDevice ? qtyBadge : countInput);
   row.appendChild(removeBtn);
 
   const wrapper = document.createElement("div");
   wrapper.className = "new-order-item-wrapper";
   wrapper.appendChild(row);
 
-  // Za uređaje (ne konektore): opciono biranje konkretnih serijskih brojeva
-  // sa stanja, do unete količine — ono što je tražio "izaberem 5 PT30, biram
-  // i 5 serijskih brojeva".
-  const product = state.products.find((p) => p.id === item.productId);
-  if (product && product.type === "device") {
-    const max = parseInt(item.count, 10) || 1;
-    if (!item.selectedSerials) item.selectedSerials = [];
-    const available = state.deviceUnits.filter((u) => u.product_id === product.id && u.status === "in_stock");
+  // Za uređaje (ne konektore): biranje konkretnih serijskih brojeva sa
+  // stanja — čekiranjem se postavlja i količina (badge iznad), nema
+  // odvojenog gornjeg limita osim stvarnog stanja na lageru.
+  if (isDevice) {
+    // I uredjaji koji su vec dodeljeni ovoj stavci (status "shipped", oslobadja
+    // ih se tek na Sacuvaj - vidi submit handler) moraju da se vide u listi kao
+    // vec cekirani, ne samo ono sto je trenutno slobodno na stanju - inace bi
+    // izmena postojece porudzbine prikazala prazan spisak iako je kolicina > 0.
+    const available = state.deviceUnits.filter(
+      (u) => u.product_id === product.id && (u.status === "in_stock" || item.selectedSerials.includes(u.id))
+    );
 
     const pickerWrap = document.createElement("div");
     pickerWrap.className = "new-order-serial-picker";
     pickerWrap.appendChild(
-      el_("div", "new-order-serial-label", `Serijski brojevi (opciono, do ${max}) — na stanju: ${available.length}`)
+      el_(
+        "div", "new-order-serial-label",
+        `Izaberi serijske brojeve — količina se postavlja automatski (na stanju: ${available.length})`
+      )
     );
 
     if (available.length === 0) {
@@ -3080,16 +3454,13 @@ function buildNewOrderItemRow(item) {
         cb.checked = item.selectedSerials.includes(unit.id);
         cb.addEventListener("change", () => {
           if (cb.checked) {
-            const currentMax = parseInt(item.count, 10) || 1;
-            if (item.selectedSerials.length >= currentMax) {
-              cb.checked = false;
-              showToast(`Možeš izabrati najviše ${currentMax} (koliko si uneo u količinu)`, true);
-              return;
-            }
             item.selectedSerials.push(unit.id);
           } else {
             item.selectedSerials = item.selectedSerials.filter((id) => id !== unit.id);
           }
+          item.count = item.selectedSerials.length;
+          qtyBadge.textContent = String(item.selectedSerials.length);
+          updateNewOrderTotal();
         });
         optLabel.appendChild(cb);
         optLabel.appendChild(document.createTextNode(unit.serial_number));
@@ -3180,6 +3551,12 @@ async function openOrderForm(mode, order) {
             productId: it.product_id || "",
             price: it.price,
             count: it.count,
+            // uredjaji vec dodeljeni ovoj stavci (status jos "shipped" dok se
+            // ne klikne Sacuvaj - release u "in_stock" desi se tek u submit-u
+            // ispod) - moraju da se ucitaju kao vec cekirani, inace bi otvaranje
+            // pa cuvanje bez dodira ispraznilo ovu stavku (selectedSerials.length
+            // === 0 => stavka se preskace pri cuvanju, vidi submit handler).
+            selectedSerials: state.deviceUnits.filter((u) => u.order_item_id === it.id).map((u) => u.id),
           }))
         : legacyFieldsAsItemRows(order);
     if (state.newOrderItems.length === 0) state.newOrderItems = [createEmptyNewOrderItem()];
@@ -3311,9 +3688,21 @@ el.newOrderForm.addEventListener("submit", async (e) => {
     (it) => it.productId && it.price !== "" && !Number.isNaN(parseFloat(it.price))
   );
 
+  let skippedDeviceCount = 0;
+
   for (const it of validItems) {
     const product = state.products.find((p) => p.id === it.productId);
-    const count = parseFloat(it.count) || 1;
+    const isDevice = product && product.type === "device";
+
+    // Uređaj bez izabranog serijskog broja nema šta da se pošalje — bez ove
+    // provere bi se upisala fantomska stavka "1x" (parseFloat(it.count)||1
+    // ispod bi tiho pretvorio 0 u 1) bez ijednog stvarno poslatog uređaja.
+    if (isDevice && (!it.selectedSerials || it.selectedSerials.length === 0)) {
+      skippedDeviceCount++;
+      continue;
+    }
+
+    const count = isDevice ? it.selectedSerials.length : parseFloat(it.count) || 1;
 
     const { data: itemRow, error: itemError } = await supabase
       .from("order_items")
@@ -3356,7 +3745,11 @@ el.newOrderForm.addEventListener("submit", async (e) => {
   closeNewOrderModal();
   await Promise.all([loadOrders(), loadOrderItems()]);
   renderOrders();
-  showToast("Porudžbina sačuvana");
+  showToast(
+    skippedDeviceCount > 0
+      ? `Porudžbina sačuvana (preskočeno ${skippedDeviceCount} stavki uređaja bez izabranog serijskog broja)`
+      : "Porudžbina sačuvana"
+  );
 });
 
 // ---------- porudžbine: jednokratni uvoz istorije iz Orders.xlsx ----------
@@ -4242,7 +4635,9 @@ function populateStockProductSelect(selectEl) {
 }
 
 // Jedna sekcija po tipu uređaja (PT30, PT40, ...), jedna ispod druge, svaka
-// sa svojim brojem na stanju i svojim spiskom serijskih brojeva.
+// sa svojim brojem na stanju. Spisak serijskih brojeva je podrazumevano
+// skupljen (samo naziv + broj na stanju) - klik na header ga otvara/zatvara,
+// da lista ne bude beskonačna kad ima puno uređaja na stanju.
 function renderStockDevices() {
   populateStockProductSelect(el.stockDeviceProduct);
 
@@ -4255,15 +4650,27 @@ function renderStockDevices() {
       .slice()
       .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
     const inStock = units.filter((u) => u.status === "in_stock").length;
+    const expanded = state.expandedStockDeviceTypes.has(p.id);
 
     const section = document.createElement("div");
     section.className = "stock-device-type-section";
     const header = document.createElement("div");
-    header.className = "stock-type-header";
+    header.className = "stock-type-header stock-type-header-toggle";
+    header.appendChild(el_("div", "stock-type-toggle-arrow", expanded ? "▾" : "▸"));
     header.appendChild(el_("div", "stock-type-name", p.name));
     header.appendChild(el_("div", "stock-type-count", String(inStock)));
     header.appendChild(el_("div", "stock-type-sublabel", "na stanju"));
+    header.addEventListener("click", () => {
+      if (expanded) state.expandedStockDeviceTypes.delete(p.id);
+      else state.expandedStockDeviceTypes.add(p.id);
+      renderStockDevices();
+    });
     section.appendChild(header);
+
+    if (!expanded) {
+      el.stockDeviceSections.appendChild(section);
+      continue;
+    }
 
     const wrap = document.createElement("div");
     wrap.className = "table-wrap";
@@ -4532,21 +4939,230 @@ function loadTesseract() {
   return tesseractLoadPromise;
 }
 
-// Izvuci SVE moguće "serijske brojeve" iz sirovog OCR teksta (slika može
-// imati više uređaja) — nizovi slova/brojeva dužine 6+, deduplikovano.
-// Korisnik svakako pregleda/otštiklira/ispravlja pre potvrde.
-function guessSerialsFromText(text) {
+// Izvuci moguće SERIJSKE BROJEVE (SN) iz sirovog OCR teksta (slika može imati
+// više uređaja na nalepnicama). Nalepnice na uređajima uvek imaju red oblika
+// "SN: 3B5000xxxxxx" pored MAC/CODE/FCC ID/IC redova — zato prvo tražimo baš
+// red uz "SN"/"S/N" oznaku (da ne pokupimo MAC/CODE/FCC kao serijski broj), pa
+// dopunimo poznatim VRH SN formatom (3B5000 + 6 cifara) ako OCR omane oko same
+// oznake. Korisnik svakako pregleda/otštiklira/ispravlja pre potvrde.
+const SN_JUNK_WORDS = new Set([
+  "DESIGNED", "CALIFORNIA", "ASSEMBLED", "CHINA", "THIS", "SIDE", "DOWN",
+  "FCC", "MAC", "CODE", "ID",
+]);
+
+// Tesseract često pogrešno pročita slovo "B" kao cifru "8" (npr. "3B5000..."
+// postane "385000..."). Znamo da VRH SN uvek ima "B" na toj poziciji, pa
+// vraćamo ispravljenu verziju kad prepoznamo taj obrazac.
+function normalizeKnownSerial(s) {
+  const m = s.match(/^3[B8]5000([0-9]{6})$/i);
+  return m ? `3B5000${m[1]}` : s;
+}
+
+// Samo tokeni nađeni uz "SN"/"S/N" oznaku ili u poznatom VRH formatu
+// (3B5000 + 6 cifara). Ovo je jedini izvor kandidata dok god BAR JEDAN prolaz
+// (cela slika ili neka od pojedinačno isečenih nalepnica) nešto nađe — MAC,
+// CODE, FCC ID i sličan šum se namerno nikad ne vraćaju odavde.
+function extractAnchoredSerials(text) {
+  const anchored = [];
+  const seenAnchored = new Set();
+
+  // Namerno strogo: "S" i "N" moraju biti neposredno jedno uz drugo (bez
+  // razmaka između, kao na pravoj nalepnici — dozvoljeno je samo "S/N"), i
+  // MORA postojati ":" ili ";" posle (Tesseract zna ":" da pročita kao ";").
+  // Bez ovoga bi slučajno "S...N" negde u OCR šumu (bez stvarne SN oznake)
+  // lažno prošlo kao kandidat. /g hvata SVE pojave u tekstu, ne samo prvu po
+  // redu — Tesseract često spoji više nalepnica u isti "red" teksta.
+  const anchorRe = /\bS\/?N\s*[:;]\s*([A-Z0-9][A-Z0-9-]{5,})/gi;
+  let m;
+  while ((m = anchorRe.exec(text)) !== null) {
+    const clean = normalizeKnownSerial(m[1].toUpperCase().replace(/[^A-Z0-9-]/g, ""));
+    if (clean.length >= 6 && !seenAnchored.has(clean)) {
+      seenAnchored.add(clean);
+      anchored.push(clean);
+    }
+  }
+
+  const knownFormat = text.match(/\b3[B8]5000[0-9]{6}\b/gi) || [];
+  for (const raw of knownFormat) {
+    const clean = normalizeKnownSerial(raw.toUpperCase());
+    if (!seenAnchored.has(clean)) {
+      seenAnchored.add(clean);
+      anchored.push(clean);
+    }
+  }
+  return anchored;
+}
+
+// Poslednja linija odbrane kad NIJEDAN prolaz (ni cela slika, ni ijedna
+// pojedinačno isečena nalepnica) nije našao ništa uz "SN" oznaku — tek tada
+// vredi ponuditi generički spisak (bez očiglednog šuma sa nalepnice) da
+// korisnik ipak ima od čega da bira i ručno ispravi.
+function extractGenericTokens(text) {
   const matches = text.match(/[A-Z0-9-]{6,}/gi) || [];
   const seen = new Set();
   const out = [];
   for (const m of matches) {
     const clean = m.toUpperCase();
+    if (SN_JUNK_WORDS.has(clean)) continue;
     if (!seen.has(clean)) {
       seen.add(clean);
       out.push(clean);
     }
   }
   return out;
+}
+
+function loadImageElement(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Ne mogu da učitam sliku"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// Pronađi nalepnice na slici i vrati tačan isečak oko svake, da se svaka
+// OCR-uje izolovano. Kad je na slici više uređaja, OCR nad CELIM kadrom
+// često "proguta" po jednu nalepnicu zbog okolnog šuma (drvo, šrafovi,
+// barkod, reljefni "THIS SIDE DOWN") — testom je potvrđeno da isti tekst
+// pouzdano pročita samo kad se posmatra izolovano. Fiksni kvadranti su se
+// pokazali nedovoljni (i dalje previše okolnog šuma po komadu), pa umesto
+// toga tražimo stvarne nalepnice: to su bele/kremaste pravougaone površine
+// (visok luminitet, NISKA zasićenost boje — za razliku od osvetljenog drveta
+// koje je i dalje žuto-braon) na tamnom kućištu uređaja.
+function detectLabelCrops(imgEl) {
+  const W = imgEl.naturalWidth;
+  const H = imgEl.naturalHeight;
+  const maxDim = 480;
+  const scale = Math.min(1, maxDim / Math.max(W, H));
+  const sw = Math.max(1, Math.round(W * scale));
+  const sh = Math.max(1, Math.round(H * scale));
+
+  const smallCanvas = document.createElement("canvas");
+  smallCanvas.width = sw;
+  smallCanvas.height = sh;
+  const sctx = smallCanvas.getContext("2d");
+  sctx.drawImage(imgEl, 0, 0, sw, sh);
+  const { data } = sctx.getImageData(0, 0, sw, sh);
+
+  const cell = 6;
+  const cols = Math.ceil(sw / cell);
+  const rows = Math.ceil(sh / cell);
+  const bright = new Uint8Array(cols * rows);
+
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const x0 = cx * cell;
+      const y0 = cy * cell;
+      const x1 = Math.min(sw, x0 + cell);
+      const y1 = Math.min(sh, y0 + cell);
+      let sumLum = 0;
+      let sumSat = 0;
+      let n = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const idx = (y * sw + x) * 4;
+          const r = data[idx];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          sumLum += 0.299 * r + 0.587 * g + 0.114 * b;
+          sumSat += Math.max(r, g, b) - Math.min(r, g, b);
+          n++;
+        }
+      }
+      const avgLum = n ? sumLum / n : 0;
+      const avgSat = n ? sumSat / n : 999;
+      bright[cy * cols + cx] = avgLum > 170 && avgSat < 28 ? 1 : 0;
+    }
+  }
+
+  // Flood fill povezanih "svetlih" ćelija u regione (kandidate za nalepnice)
+  const visited = new Uint8Array(cols * rows);
+  const boxes = [];
+  for (let cy = 0; cy < rows; cy++) {
+    for (let cx = 0; cx < cols; cx++) {
+      const startIdx = cy * cols + cx;
+      if (!bright[startIdx] || visited[startIdx]) continue;
+      let minX = cx, maxX = cx, minY = cy, maxY = cy, size = 0;
+      const stack = [startIdx];
+      visited[startIdx] = 1;
+      while (stack.length) {
+        const cur = stack.pop();
+        const y = Math.floor(cur / cols);
+        const x = cur % cols;
+        size++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+        const neighbors = [
+          [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
+        ];
+        for (const [nx, ny] of neighbors) {
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+          const nIdx = ny * cols + nx;
+          if (bright[nIdx] && !visited[nIdx]) {
+            visited[nIdx] = 1;
+            stack.push(nIdx);
+          }
+        }
+      }
+      if (size < 6) continue;
+      const bw = (maxX - minX + 1) * cell;
+      const bh = (maxY - minY + 1) * cell;
+      // Nalepnica je pravougaona i zauzima razuman deo kadra — filtriraj
+      // sitan šum i preterano velike/izdužene regione (npr. osvetljen zid).
+      if (bw < sw * 0.12 || bh < sh * 0.04 || bw > sw * 0.85 || bh > sh * 0.6) continue;
+      boxes.push({ x: minX * cell, y: minY * cell, w: bw, h: bh });
+    }
+  }
+
+  // Nazad na originalnu rezoluciju, uz malo dopune (padding) da se ne odseče
+  // ivica nalepnice ili poslednja cifra.
+  const pad = 0.15;
+  return boxes.map((b) => {
+    const ox = b.x / scale;
+    const oy = b.y / scale;
+    const ow = b.w / scale;
+    const oh = b.h / scale;
+    const padX = ow * pad;
+    const padY = oh * pad;
+    const x0 = Math.max(0, ox - padX);
+    const y0 = Math.max(0, oy - padY);
+    const x1 = Math.min(W, ox + ow + padX);
+    const y1 = Math.min(H, oy + oh + padY);
+    const cw = Math.round(x1 - x0);
+    const ch = Math.round(y1 - y0);
+    const canvas = document.createElement("canvas");
+    canvas.width = cw;
+    canvas.height = ch;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(imgEl, x0, y0, cw, ch, 0, 0, cw, ch);
+    return canvas;
+  });
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), "image/png"));
+}
+
+// Telefon često snima uređaje "na bok" (nalepnica ispada vertikalna na
+// slici) — OCR pouzdano čita tekst samo kad je približno horizontalan, pa
+// za svaku nalepnicu probamo sve 4 rotacije dok neka ne da pogodak uz "SN".
+function rotateCanvas(sourceCanvas, degrees) {
+  if (degrees === 0) return sourceCanvas;
+  const rad = (degrees * Math.PI) / 180;
+  const w = sourceCanvas.width;
+  const h = sourceCanvas.height;
+  const swap = degrees === 90 || degrees === 270;
+  const canvas = document.createElement("canvas");
+  canvas.width = swap ? h : w;
+  canvas.height = swap ? w : h;
+  const ctx = canvas.getContext("2d");
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(rad);
+  ctx.drawImage(sourceCanvas, -w / 2, -h / 2);
+  return canvas;
 }
 
 function renderOcrCandidates(candidates) {
@@ -4600,27 +5216,81 @@ el.stockOcrFile.addEventListener("change", async () => {
   try {
     await loadTesseract();
     let combinedText = "";
-    const seen = new Set();
-    const allCandidates = [];
+    const allTexts = [];
+    const anchoredSeen = new Set();
+    const anchoredCandidates = [];
 
     for (let i = 0; i < files.length; i++) {
       el.stockOcrStatus.textContent = `Čitanje slike ${i + 1}/${files.length}...`;
       const result = await window.Tesseract.recognize(files[i], "eng");
       const text = (result.data.text || "").trim();
       combinedText += (combinedText ? "\n---\n" : "") + text;
-      for (const c of guessSerialsFromText(text)) {
-        if (!seen.has(c)) {
-          seen.add(c);
-          allCandidates.push(c);
+      allTexts.push(text);
+      for (const c of extractAnchoredSerials(text)) {
+        if (!anchoredSeen.has(c)) {
+          anchoredSeen.add(c);
+          anchoredCandidates.push(c);
+        }
+      }
+
+      // Dopunski prolaz po pojedinačno detektovanim nalepnicama — hvata
+      // uređaje koje OCR nad celim kadrom promaši zbog okolnog šuma kad ima
+      // više uređaja na slici.
+      try {
+        const imgEl = await loadImageElement(files[i]);
+        const labelCanvases = detectLabelCrops(imgEl);
+        for (let li = 0; li < labelCanvases.length; li++) {
+          // Nalepnica na slici može biti fotografisana "na bok" — probaj sve
+          // 4 rotacije i stani čim neka da pogodak uz "SN" (nema potrebe
+          // trošiti vreme na preostale uglove za tu istu nalepnicu).
+          for (const angle of [0, 90, 180, 270]) {
+            el.stockOcrStatus.textContent = `Čitanje slike ${i + 1}/${files.length} (nalepnica ${li + 1}/${labelCanvases.length}, ugao ${angle}°)...`;
+            const canvas = rotateCanvas(labelCanvases[li], angle);
+            const blob = await canvasToBlob(canvas);
+            if (!blob) continue;
+            const lResult = await window.Tesseract.recognize(blob, "eng");
+            const lText = (lResult.data.text || "").trim();
+            allTexts.push(lText);
+            const found = extractAnchoredSerials(lText);
+            if (found.length > 0) {
+              for (const c of found) {
+                if (!anchoredSeen.has(c)) {
+                  anchoredSeen.add(c);
+                  anchoredCandidates.push(c);
+                }
+              }
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Čitanje po nalepnicama nije uspelo:", err);
+      }
+    }
+
+    // Generički fallback (bez SN oznake) se koristi SAMO ako baš nijedan
+    // prolaz nije našao nijedan pravi SN — inače bi jedan "prljav" prolaz
+    // (npr. cela slika) zatrpao listu sa MAC/CODE/FCC šumom pored pravih SN
+    // vrednosti koje je neki drugi (čistiji) prolaz uredno našao.
+    let finalCandidates = anchoredCandidates;
+    if (finalCandidates.length === 0) {
+      const genericSeen = new Set();
+      finalCandidates = [];
+      for (const t of allTexts) {
+        for (const c of extractGenericTokens(t)) {
+          if (!genericSeen.has(c)) {
+            genericSeen.add(c);
+            finalCandidates.push(c);
+          }
         }
       }
     }
 
-    el.stockOcrStatus.textContent = allCandidates.length
-      ? `Pronađeno ${allCandidates.length} mogućih serijskih brojeva sa ${files.length} slik${files.length === 1 ? "e" : "a"} — proveri ispod pre dodavanja.`
+    el.stockOcrStatus.textContent = finalCandidates.length
+      ? `Pronađeno ${finalCandidates.length} mogućih serijskih brojeva sa ${files.length} slik${files.length === 1 ? "e" : "a"} — proveri ispod pre dodavanja.`
       : "Nije prepoznat nijedan mogući serijski broj — proveri sirov tekst ili unesi ručno.";
     el.stockOcrRawText.value = combinedText;
-    renderOcrCandidates(allCandidates);
+    renderOcrCandidates(finalCandidates);
     el.stockOcrResult.hidden = false;
   } catch (err) {
     console.error(err);
@@ -5219,3 +5889,28 @@ supabase.auth.onAuthStateChange((event) => {
     location.reload();
   }
 });
+
+// ---------- auto-refresh posle 13:02 UTC (kad automatski ELD sync zavrsi) ----------
+// Ako app ostane otvoren preko podneva, korisnik ne treba rucno da radi F5
+// da bi video sveze podatke posle automatskog sync-a (cron u 13:00/13:01
+// UTC, sql/sync.sql) - ova provera na svakih 60s automatski osvezi Pregled
+// kamiona (i trenutno prikazan izvestaj, ako je Izvestaj strana otvorena)
+// tacno jednom, prvi put kad primeti da je proslo 13:02 UTC tog dana.
+let autoRefreshDoneForUtcDate = null;
+
+function checkAutoRefreshAfterSync() {
+  if (!el.pageNav || el.pageNav.hidden) return; // jos nije ulogovan
+
+  const nowUtc = new Date();
+  const utcDateStr = `${nowUtc.getUTCFullYear()}-${pad(nowUtc.getUTCMonth() + 1)}-${pad(nowUtc.getUTCDate())}`;
+  const pastSyncTime =
+    nowUtc.getUTCHours() > 13 || (nowUtc.getUTCHours() === 13 && nowUtc.getUTCMinutes() >= 2);
+
+  if (!pastSyncTime || autoRefreshDoneForUtcDate === utcDateStr) return;
+  autoRefreshDoneForUtcDate = utcDateStr;
+
+  refreshAll();
+  if (el.pageReports && !el.pageReports.hidden) runReport();
+}
+
+setInterval(checkAutoRefreshAfterSync, 60000);

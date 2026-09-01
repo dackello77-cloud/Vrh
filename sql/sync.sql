@@ -27,6 +27,21 @@ create table if not exists eld_sync_state (
 );
 insert into eld_sync_state (id) values (1) on conflict (id) do nothing;
 
+-- last_collect_at/last_collect_summary: kad se collect_eld_sync() zadnji put
+-- POKUSAO (uspesno, preskoceno zbog neradnog dana, ili sa greskom) - za
+-- "Poslednja sinhronizacija u HH:MM" prikaz u UI (Pregled kamiona/Izvestaj).
+-- Odvojeno od last_request_id/updated_at gore, koje kickoff_eld_sync() upisuje
+-- kad zahtev POSALJE, ne kad odgovor stvarno stigne i upise se.
+alter table eld_sync_state add column if not exists last_collect_at timestamptz;
+alter table eld_sync_state add column if not exists last_collect_summary jsonb;
+
+alter table eld_sync_state enable row level security;
+drop policy if exists "eld_sync_state_select" on eld_sync_state;
+create policy "eld_sync_state_select" on eld_sync_state
+  for select
+  using (auth.uid() is not null);
+grant select on eld_sync_state to authenticated;
+
 -- ---------- neradni dani: vikendi + drzavni praznici ----------
 -- Praznici se ne mogu izracunati iz dana u nedelji (Uskrs je pokretan, a
 -- praznik moze pasti i radnim danom pon-pet), pa se drze u tabeli koju
@@ -89,6 +104,56 @@ $$;
 
 grant execute on function kickoff_eld_sync() to anon, authenticated, service_role;
 alter function kickoff_eld_sync() set statement_timeout = '15s';
+
+-- ---------- retry u 13:05 i 13:10 UTC ako 13h pokusaj nije upisao nista ----------
+-- Redovan 13:00/13:01 pokusaj moze da "uspe" (HTTP 200, bez greske) a da
+-- ipak ne upise nijedan red - npr. ako ELD worker tog trenutka vrati prazan
+-- odgovor bez firmi (desilo se 31.8.2026, vidi last_collect_summary tog
+-- dana). To collect_eld_sync() ne tretira kao gresku (nema exception), pa
+-- obican retry-na-gresku ne bi ni pokusao ponovo. Ova funkcija umesto toga
+-- gleda da li je DANAS vec upisan bar 1 red (last_collect_summary.rows_written
+-- > 0) - ako nije, salje nov HTTP zahtev; ako jeste, ne radi nista (ne salje
+-- nepotreban zahtev). Zove je kickoff_eld_sync_retry_if_needed() cron posao
+-- u 13:05 i 13:10 UTC, minut pre odgovarajuceg collect_eld_sync() poziva
+-- (isti dvokorani obrazac kao redovan sync - pg_net je async).
+-- Rucno dugme "Sinhronizuj sada" i dalje zove obican kickoff_eld_sync()
+-- (uvek salje zahtev kad se klikne) - ova funkcija je samo za automatski
+-- retry, ne dira to ponasanje.
+create or replace function kickoff_eld_sync_retry_if_needed()
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  req_id bigint;
+  last_at timestamptz;
+  last_summary jsonb;
+  already_ok boolean;
+begin
+  if is_non_working_day(current_date) then
+    return null;
+  end if;
+
+  select last_collect_at, last_collect_summary into last_at, last_summary
+  from eld_sync_state where id = 1;
+
+  already_ok := last_at is not null
+    and last_at::date = current_date
+    and coalesce((last_summary->>'rows_written')::int, 0) > 0;
+
+  if already_ok then
+    return null;
+  end if;
+
+  req_id := net.http_get(url => 'https://royal-paper-656b.dackello77.workers.dev/');
+  update eld_sync_state set last_request_id = req_id, updated_at = now() where id = 1;
+  return req_id;
+end;
+$$;
+
+grant execute on function kickoff_eld_sync_retry_if_needed() to anon, authenticated, service_role;
+alter function kickoff_eld_sync_retry_if_needed() set statement_timeout = '15s';
 
 -- ---------- korak 1.5: automatski upis novih firmi iz ELD API-ja ----------
 -- Kad se u ELD API odgovoru pojavi firma (external_id) koje još nema u
@@ -215,10 +280,15 @@ declare
   -- backfill_eld_date() ispod za rucno popunjavanje ako se ovo opet desi.
   window_start date := current_date - 4;
   provision_result jsonb;
+  result jsonb;
 begin
   if is_non_working_day(current_date) then
-    return jsonb_build_object('skipped', true, 'reason', 'neradni dan');
+    result := jsonb_build_object('skipped', true, 'reason', 'neradni dan');
+    update eld_sync_state set last_collect_at = now(), last_collect_summary = result where id = 1;
+    return result;
   end if;
+
+  begin
 
   select last_request_id into req_id from eld_sync_state where id = 1;
   if req_id is null then
@@ -335,12 +405,22 @@ begin
     end loop;
   end loop;
 
-  return jsonb_build_object(
+  result := jsonb_build_object(
     'companies_synced', synced_companies,
     'rows_written', synced_rows,
     'provisioning', provision_result,
     'ran_at', now()
   );
+  update eld_sync_state set last_collect_at = now(), last_collect_summary = result where id = 1;
+  return result;
+
+  exception when others then
+    update eld_sync_state
+      set last_collect_at = now(),
+          last_collect_summary = jsonb_build_object('error', sqlerrm)
+      where id = 1;
+    raise;
+  end;
 end;
 $$;
 
@@ -500,8 +580,17 @@ alter function backfill_eld_date(date) set statement_timeout = '25s';
 -- interno preskace ako je tekuci datum radni. Tako se vikendi i praznici
 -- (cak i kad praznik padne pon-pet) tretiraju isto, bez posebnih cron izraza.
 -- NAPOMENA: zimi (CET, UTC+1) ovo ce raditi u 14:00 po lokalnom vremenu -
--- treba rucno pomeriti sve na '0 14 * * *' / '1 14 * * *' / '5 14 * * *'
--- kad predje na zimsko vreme.
+-- treba rucno pomeriti sve na '0 14 * * *' / '1 14 * * *' / '5 14 * * *' /
+-- '5 14 * * *' / '6 14 * * *' / '10 14 * * *' / '11 14 * * *' (svih 7
+-- poslova ispod, isti pomeraj od 1h) kad predje na zimsko vreme.
+
+-- Retry u 13:05/13:06 i 13:10/13:11 UTC: ako 13:00/13:01 pokusaj nije upisao
+-- nijedan red (greska ILI "tihi" neuspeh - 200 OK ali prazan odgovor od
+-- ELD worker-a, videti kickoff_eld_sync_retry_if_needed() iznad), pokusa
+-- ponovo automatski, bez potrebe da neko otvori sajt i klikne "Sinhronizuj
+-- sada". Ako je 13:00 pokusaj vec uspeo, oba retry-ja se ne rade nista
+-- (kickoff_eld_sync_retry_if_needed() vraca null, collect_eld_sync() samo
+-- ponovo obradi vec obradjen odgovor - bezopasno, upsert je idempotentan).
 
 do $$
 begin
@@ -514,8 +603,24 @@ begin
   if exists (select 1 from cron.job where jobname = 'eld-sync-weekend-carry') then
     perform cron.unschedule('eld-sync-weekend-carry');
   end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry1-kickoff') then
+    perform cron.unschedule('eld-sync-retry1-kickoff');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry1-collect') then
+    perform cron.unschedule('eld-sync-retry1-collect');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry2-kickoff') then
+    perform cron.unschedule('eld-sync-retry2-kickoff');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry2-collect') then
+    perform cron.unschedule('eld-sync-retry2-collect');
+  end if;
 end $$;
 
 select cron.schedule('eld-sync-kickoff', '0 13 * * *', $$select kickoff_eld_sync();$$);
 select cron.schedule('eld-sync-collect', '1 13 * * *', $$select collect_eld_sync();$$);
 select cron.schedule('eld-sync-weekend-carry', '5 13 * * *', $$select carry_forward_last_working_day();$$);
+select cron.schedule('eld-sync-retry1-kickoff', '5 13 * * *', $$select kickoff_eld_sync_retry_if_needed();$$);
+select cron.schedule('eld-sync-retry1-collect', '6 13 * * *', $$select collect_eld_sync();$$);
+select cron.schedule('eld-sync-retry2-kickoff', '10 13 * * *', $$select kickoff_eld_sync_retry_if_needed();$$);
+select cron.schedule('eld-sync-retry2-collect', '11 13 * * *', $$select collect_eld_sync();$$);

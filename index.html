@@ -104,6 +104,7 @@
       <span class="legend-item"><span class="swatch swatch-weekend"></span> T — vikend, broj preneto sa petka (nije nova sinhronizacija)</span>
       <span class="legend-item">T = Total, S = Start, B = Basic, A = Advanced — kolona za unos se bira po firmi (desni klik), podrazumevano A</span>
       <span class="legend-item">Crveno na T označava i dan kad besplatan period ističe; tokom free perioda nema markiranja</span>
+      <span id="syncStatus" class="legend-item sync-status"></span>
     </div>
 
     <main class="table-wrap">
@@ -131,9 +132,12 @@
       <div class="report-date-picker">
         <label id="reportDateLabel">Datum <input type="date" id="reportDate" /></label>
         <button id="generateReportBtn" class="btn btn-primary">Generiši</button>
+        <button id="sendCurrentToNaplataBtn" class="btn">Pošalji u naplatu</button>
         <button id="downloadPdfBtn" class="btn">Kreiraj PDF</button>
       </div>
     </header>
+
+    <p id="reportSyncStatus" class="sync-status sync-status-line"></p>
 
     <main id="reportContent" class="report-content"></main>
   </div>
@@ -402,12 +406,17 @@
     </header>
 
     <main class="stock-page-content">
-      <div id="stockDeviceSections"></div>
+      <div class="stock-columns">
+        <section class="stock-connectors-section stock-column">
+          <h2>Konektori</h2>
+          <div id="stockConnectorsList"></div>
+        </section>
 
-      <section class="stock-connectors-section">
-        <h2>Konektori</h2>
-        <div id="stockConnectorsList"></div>
-      </section>
+        <section class="stock-devices-section stock-column">
+          <h2>Uređaji</h2>
+          <div id="stockDeviceSections"></div>
+        </section>
+      </div>
     </main>
   </div>
 

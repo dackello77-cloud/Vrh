@@ -515,6 +515,22 @@ table.report-table-green tfoot td {
   display: inline-block;
 }
 
+.sync-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sync-status.sync-status-error {
+  color: var(--red, #dc2626);
+  font-weight: 600;
+}
+
+.sync-status-line {
+  padding: 6px 16px;
+  margin: 0;
+  border-bottom: 1px solid var(--border);
+}
+
 .swatch-orange { background: var(--orange); }
 .swatch-green { background: var(--green); }
 .swatch-red { background: var(--red); }
@@ -1354,6 +1370,36 @@ table.orders-table th, table.orders-table td {
   background: #eef2f7;
 }
 
+.orders-row-cancelled {
+  opacity: 0.55;
+}
+
+.orders-row-cancelled .orders-company-cell,
+.orders-row-cancelled .orders-items-cell {
+  text-decoration: line-through;
+}
+
+.orders-cancelled-badge {
+  background: var(--danger);
+  color: #fff;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.orders-actions-cell {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.icon-cancel-order {
+  color: var(--danger);
+}
+
+.icon-restore-order {
+  color: var(--accent);
+}
+
 .orders-company-cell {
   font-weight: 600;
   white-space: nowrap;
@@ -1487,6 +1533,18 @@ table.orders-table th, table.orders-table td {
   padding: 4px 8px;
 }
 
+.new-order-item-qty-badge {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  background: var(--today-col);
+}
+
 .new-order-item-wrapper {
   border: 1px solid transparent;
 }
@@ -1565,18 +1623,25 @@ table.orders-table th, table.orders-table td {
 
 .stock-page-content {
   padding: 20px;
-  max-width: 900px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.stock-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.stock-column h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
 }
 
 .stock-connectors-section {
-  margin-top: 12px;
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
-}
-
-.stock-connectors-section h2 {
-  font-size: 15px;
-  margin: 0 0 10px;
+  padding-top: 0;
+  border-top: none;
 }
 
 .stock-modal-product-label {
@@ -1710,7 +1775,7 @@ table.orders-table th, table.orders-table td {
 }
 
 .stock-device-type-section {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .stock-type-header {
@@ -1720,17 +1785,34 @@ table.orders-table th, table.orders-table td {
   margin-bottom: 14px;
 }
 
+.stock-type-header-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.stock-type-toggle-arrow {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .stock-type-name {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   color: var(--text);
+  /* fiksna sirina - brojevi na stanju (sledeca kolona) se poravnaju jedan
+     ispod drugog bez obzira na duzinu naziva proizvoda */
+  width: 110px;
+  flex-shrink: 0;
 }
 
 .stock-type-count {
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 800;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  min-width: 40px;
 }
 
 .stock-type-sublabel {
@@ -1963,10 +2045,16 @@ button.home-tile-btn {
   }
 
   /* Stanje uređaja: samo pregled na mobilnom - bez dodavanja/brisanja, bez
-     serijskih brojeva/statusa (samo naziv + broj na stanju). */
+     serijskih brojeva/statusa (samo naziv + broj na stanju), i jedna kolona
+     ispod druge umesto dve kolone jedna pored druge. */
   #stockAddBtn,
   .stock-device-type-section .table-wrap {
     display: none;
+  }
+
+  .stock-columns {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
   /* Dnevni izveštaj sa Početne: samo generisan sadržaj, bez tabova/datuma/dugmadi */
