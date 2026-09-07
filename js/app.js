@@ -819,6 +819,11 @@ function renderCompanyRow(company, nDays, todayDay) {
     const dayData = (state.counts[company.id] || {})[d] || {};
     const isToday = d === todayDay;
     const isFree = isFreeDay(state.year, state.month, d, billingStartsOn);
+    // Behind firme se ne naplaćuju kroz "current" dnevni obračun (idu kroz
+    // poseban Behind izveštaj, sa svojim ciklusom 25.–24.) — narandžasto bi
+    // ovde lažno sugerisalo novi naplativi rekord u tom obračunu, pa se za
+    // njih porast uvek markira samo zeleno, isto kao tokom free perioda.
+    const neverOrange = isFree || company.status === "behind";
     const isBillingStartDay = billingStartsOn && dateStr(state.year, state.month, d) === billingStartsOn;
     const dayPriorMax = priorMax(state.counts[company.id], d, state.year, state.month, billingStartsOn);
     const prevTotal = priorDayTotal(
@@ -836,7 +841,7 @@ function renderCompanyRow(company, nDays, todayDay) {
       tdT.classList.add("cell-red");
       tdT.title = "Kraj besplatnog perioda — naplata počinje";
     } else {
-      const tColor = totalColor(dayData.total, prevTotal, dayPriorMax, isFree);
+      const tColor = totalColor(dayData.total, prevTotal, dayPriorMax, neverOrange);
       if (tColor === "orange") tdT.classList.add("cell-orange");
       else if (tColor === "green") tdT.classList.add("cell-green");
       else if (tColor === "blue") tdT.classList.add("cell-blue");
@@ -865,7 +870,7 @@ function renderCompanyRow(company, nDays, todayDay) {
 
       if (field === entryCol) {
         td.classList.add("sub-a-editable");
-        const color = entryColor(dayData, entryCol, dayData.total, dayPriorMax, isFree);
+        const color = entryColor(dayData, entryCol, dayData.total, dayPriorMax, neverOrange);
         if (color === "orange") td.classList.add("cell-orange");
         if (color === "green") td.classList.add("cell-green");
 
