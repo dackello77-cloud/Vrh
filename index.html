@@ -98,12 +98,13 @@
     </header>
 
     <div class="legend">
-      <span class="legend-item"><span class="swatch swatch-red"></span> T — prvi dan kad je dostignut mesečni maksimum</span>
-      <span class="legend-item"><span class="swatch swatch-orange"></span> A — dodato kamiona na dan mesečnog maksimuma</span>
-      <span class="legend-item"><span class="swatch swatch-green"></span> A — dodato kamiona, ali nije mesečni maksimum</span>
+      <span class="legend-item"><span class="swatch swatch-orange"></span> porast u odnosu na dan pre koji dostiže novi mesečni maksimum</span>
+      <span class="legend-item"><span class="swatch swatch-green"></span> porast u odnosu na dan pre, ali nije novi maksimum</span>
+      <span class="legend-item"><span class="swatch swatch-blue"></span> T — pad broja kamiona u odnosu na dan pre</span>
+      <span class="legend-item"><span class="swatch swatch-red"></span> T — dan kad besplatan period ističe i počinje naplata</span>
       <span class="legend-item"><span class="swatch swatch-weekend"></span> T — vikend, broj preneto sa petka (nije nova sinhronizacija)</span>
       <span class="legend-item">T = Total, S = Start, B = Basic, A = Advanced — kolona za unos se bira po firmi (desni klik), podrazumevano A</span>
-      <span class="legend-item">Crveno na T označava i dan kad besplatan period ističe; tokom free perioda nema markiranja</span>
+      <span class="legend-item">Ponedeljak se poredi sa petkom (vikend nosi isti broj), pa se porast/pad tačno vidi i posle vikenda</span>
       <span id="syncStatus" class="legend-item sync-status"></span>
     </div>
 
@@ -726,6 +727,25 @@
           <button type="submit" class="btn btn-primary">Sačuvaj</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="invoiceModal" class="modal-overlay" hidden>
+    <div class="modal modal-wide">
+      <h2>Faktura</h2>
+      <p id="invoiceModalSubtitle" class="modal-subtitle"></p>
+
+      <div id="invoicePreview" class="invoice-preview"></div>
+
+      <label class="invoice-send-row">
+        Pošalji na
+        <input type="email" id="invoiceSendTo" />
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" id="closeInvoiceBtn" class="btn">Zatvori</button>
+        <button type="button" id="sendInvoiceBtn" class="btn btn-primary">Pošalji</button>
+      </div>
     </div>
   </div>
 

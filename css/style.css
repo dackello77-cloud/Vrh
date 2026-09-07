@@ -13,6 +13,8 @@
   --green-text: #0a3d1a;
   --red: #e53935;
   --red-text: #ffffff;
+  --blue: #29b6f6;
+  --blue-text: #063a52;
   --weekend-bg: #ded4f7;
   --weekend-text: #3730a3;
   --today-col: #eef4ff;
@@ -534,6 +536,7 @@ table.report-table-green tfoot td {
 .swatch-orange { background: var(--orange); }
 .swatch-green { background: var(--green); }
 .swatch-red { background: var(--red); }
+.swatch-blue { background: var(--blue); }
 .swatch-weekend { background: var(--weekend-bg); }
 
 .table-wrap {
@@ -811,6 +814,12 @@ table.grid {
   background: var(--red);
   color: var(--red-text);
   font-weight: 700;
+}
+
+.grid td.cell-blue {
+  background: var(--blue);
+  color: var(--blue-text);
+  font-weight: 600;
 }
 
 .advanced-input {
@@ -1454,6 +1463,38 @@ table.orders-table th, table.orders-table td {
 
 .modal-xwide h2, .modal-xwide > .modal-actions {
   padding: 0 24px;
+}
+
+.invoice-preview {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin: 10px 0;
+  max-height: 55vh;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.invoice-send-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.invoice-send-row input {
+  flex: 1;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.invoice-report-btn {
+  font-size: 11px;
+  padding: 4px 8px;
 }
 
 .order-form-columns {

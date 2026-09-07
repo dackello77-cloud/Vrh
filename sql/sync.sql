@@ -584,13 +584,15 @@ alter function backfill_eld_date(date) set statement_timeout = '25s';
 -- '5 14 * * *' / '6 14 * * *' / '10 14 * * *' / '11 14 * * *' (svih 7
 -- poslova ispod, isti pomeraj od 1h) kad predje na zimsko vreme.
 
--- Retry u 13:05/13:06 i 13:10/13:11 UTC: ako 13:00/13:01 pokusaj nije upisao
--- nijedan red (greska ILI "tihi" neuspeh - 200 OK ali prazan odgovor od
--- ELD worker-a, videti kickoff_eld_sync_retry_if_needed() iznad), pokusa
--- ponovo automatski, bez potrebe da neko otvori sajt i klikne "Sinhronizuj
--- sada". Ako je 13:00 pokusaj vec uspeo, oba retry-ja se ne rade nista
--- (kickoff_eld_sync_retry_if_needed() vraca null, collect_eld_sync() samo
--- ponovo obradi vec obradjen odgovor - bezopasno, upsert je idempotentan).
+-- Retry na svakih 5 min od 13:05 do 13:30 UTC (6 pokusaja: 13:05/06,
+-- 13:10/11, 13:15/16, 13:20/21, 13:25/26, 13:30/31): ako 13:00/13:01
+-- pokusaj nije upisao nijedan red (greska ILI "tihi" neuspeh - 200 OK ali
+-- prazan odgovor od ELD worker-a, videti kickoff_eld_sync_retry_if_needed()
+-- iznad), pokusa ponovo automatski, bez potrebe da neko otvori sajt i
+-- klikne "Sinhronizuj sada". Cim jedan pokusaj upise bar 1 red, svi naredni
+-- retry-jevi se ne rade nista (kickoff_eld_sync_retry_if_needed() vraca
+-- null, collect_eld_sync() samo ponovo obradi vec obradjen odgovor -
+-- bezopasno, upsert je idempotentan).
 
 do $$
 begin
@@ -615,6 +617,30 @@ begin
   if exists (select 1 from cron.job where jobname = 'eld-sync-retry2-collect') then
     perform cron.unschedule('eld-sync-retry2-collect');
   end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry3-kickoff') then
+    perform cron.unschedule('eld-sync-retry3-kickoff');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry3-collect') then
+    perform cron.unschedule('eld-sync-retry3-collect');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry4-kickoff') then
+    perform cron.unschedule('eld-sync-retry4-kickoff');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry4-collect') then
+    perform cron.unschedule('eld-sync-retry4-collect');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry5-kickoff') then
+    perform cron.unschedule('eld-sync-retry5-kickoff');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry5-collect') then
+    perform cron.unschedule('eld-sync-retry5-collect');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry6-kickoff') then
+    perform cron.unschedule('eld-sync-retry6-kickoff');
+  end if;
+  if exists (select 1 from cron.job where jobname = 'eld-sync-retry6-collect') then
+    perform cron.unschedule('eld-sync-retry6-collect');
+  end if;
 end $$;
 
 select cron.schedule('eld-sync-kickoff', '0 13 * * *', $$select kickoff_eld_sync();$$);
@@ -624,3 +650,11 @@ select cron.schedule('eld-sync-retry1-kickoff', '5 13 * * *', $$select kickoff_e
 select cron.schedule('eld-sync-retry1-collect', '6 13 * * *', $$select collect_eld_sync();$$);
 select cron.schedule('eld-sync-retry2-kickoff', '10 13 * * *', $$select kickoff_eld_sync_retry_if_needed();$$);
 select cron.schedule('eld-sync-retry2-collect', '11 13 * * *', $$select collect_eld_sync();$$);
+select cron.schedule('eld-sync-retry3-kickoff', '15 13 * * *', $$select kickoff_eld_sync_retry_if_needed();$$);
+select cron.schedule('eld-sync-retry3-collect', '16 13 * * *', $$select collect_eld_sync();$$);
+select cron.schedule('eld-sync-retry4-kickoff', '20 13 * * *', $$select kickoff_eld_sync_retry_if_needed();$$);
+select cron.schedule('eld-sync-retry4-collect', '21 13 * * *', $$select collect_eld_sync();$$);
+select cron.schedule('eld-sync-retry5-kickoff', '25 13 * * *', $$select kickoff_eld_sync_retry_if_needed();$$);
+select cron.schedule('eld-sync-retry5-collect', '26 13 * * *', $$select collect_eld_sync();$$);
+select cron.schedule('eld-sync-retry6-kickoff', '30 13 * * *', $$select kickoff_eld_sync_retry_if_needed();$$);
+select cron.schedule('eld-sync-retry6-collect', '31 13 * * *', $$select collect_eld_sync();$$);

@@ -7,6 +7,15 @@ const MONTH_NAMES = [
 
 const SUB_COLS = ["T", "S", "B", "A"];
 const ELD_API_URL = "https://royal-paper-656b.dackello77.workers.dev/";
+// Cloudflare Worker koji stvarno šalje fakturu emailom (Resend API) — vidi
+// worker/invoice-email-worker.js za kod i uputstvo za deploy. Prazno dok se
+// ne deploy-uje i URL ne upiše ovde — dugme "Pošalji" u fakturi do tad javlja
+// grešku umesto da tiho ništa ne uradi.
+const INVOICE_EMAIL_WORKER_URL = "";
+// Test faza: sve fakture idu ovde bez obzira na email upisan kod firme u
+// Podešavanjima (to polje se tek popunjava, za kasnije kad se pređe na
+// slanje na stvarne adrese firmi).
+const TEST_INVOICE_EMAIL = "dackello77@gmail.com";
 // Fiksna cena za "S - Start" nivo, nezavisno od company.price — Start firme
 // (bilo koji status) se tretiraju kao behind i naplaćuju po ovoj ceni umesto
 // proporcionalnog "current" obračuna. Vidi computeCurrentDetailRows i
@@ -94,6 +103,8 @@ const state = {
   manuallyVisibleCompanyIds: loadManuallyVisibleCompanyIds(), // firme sačuvane iz "Nova firma iz API-ja" modala — vidljive u Pregled kamiona i pre nego što stigne prva ELD sinhronizacija brojeva
   reportType: "daily", // "daily" | "behind" | "current"
   lastCurrentReport: null, // { dateValue, rows } — poslednje generisan Current izveštaj, za "Pošalji u naplatu"
+  currentInvoice: null, // otvorena faktura u invoiceModal (red iz "invoices" tabele)
+  currentInvoiceCompany: null,
   naplata: [],
   naplataLoaded: false,
   naplataTab: "active", // "active" | "closed"
@@ -302,6 +313,12 @@ const el = {
   companyBillingStartsOn: document.getElementById("companyBillingStartsOn"),
   companyNotes: document.getElementById("companyNotes"),
   cancelCompanyBtn: document.getElementById("cancelCompanyBtn"),
+  invoiceModal: document.getElementById("invoiceModal"),
+  invoiceModalSubtitle: document.getElementById("invoiceModalSubtitle"),
+  invoicePreview: document.getElementById("invoicePreview"),
+  invoiceSendTo: document.getElementById("invoiceSendTo"),
+  closeInvoiceBtn: document.getElementById("closeInvoiceBtn"),
+  sendInvoiceBtn: document.getElementById("sendInvoiceBtn"),
   pageLogin: document.getElementById("pageLogin"),
   loginForm: document.getElementById("loginForm"),
   loginEmail: document.getElementById("loginEmail"),
@@ -550,26 +567,6 @@ function isFreeDay(year, month, day, billingStartsOn) {
   return dateStr(year, month, day) < billingStartsOn;
 }
 
-// T has one flat color for every cell except the first day the month's
-// highest total is reached, which is marked red. Days still in the free
-// period don't count toward the max and can't be marked red.
-function monthMaxDay(companyCounts, nDays, year, month, billingStartsOn) {
-  const counts = companyCounts || {};
-  let max = -Infinity;
-  for (let d = 1; d <= nDays; d++) {
-    if (isFreeDay(year, month, d, billingStartsOn)) continue;
-    const t = counts[d]?.total;
-    if (t !== undefined && t !== null) max = Math.max(max, t);
-  }
-  if (max === -Infinity) return { max: null, firstDay: null };
-
-  for (let d = 1; d <= nDays; d++) {
-    if (isFreeDay(year, month, d, billingStartsOn)) continue;
-    if (counts[d]?.total === max) return { max, firstDay: d };
-  }
-  return { max, firstDay: null };
-}
-
 // Highest total seen on any day strictly before `day` (skipping free-period
 // days). -Infinity when there's no earlier data, so day 1 always counts as
 // a fresh record.
@@ -597,6 +594,47 @@ function entryColor(dayData, entryCol, total, dayPriorMax, isFree) {
   if (!value || value <= 0) return null;
   if (isFree) return "green";
   return total !== undefined && total !== null && total > dayPriorMax ? "orange" : "green";
+}
+
+// Most recent day strictly before `day` that actually has a total (skips
+// gaps — e.g. a company added mid-month, or a day sync never wrote a row).
+// Same fallback the backend uses in collect_eld_sync (sql/sync.sql): walk
+// back to the last real row instead of only looking at day-1, otherwise a
+// single missing day would hide a genuine increase/decrease on the next
+// one. Falls back to last month's tail total when nothing earlier exists
+// in this month (day 1, or every earlier day this month is a gap) — and to
+// 0 when there's no prior month total either (brand new company, first day
+// it's ever had any trucks at all). No earlier data means "had nothing",
+// not "unknown" — otherwise a company's very first day with a truck never
+// gets marked as a new record.
+function priorDayTotal(companyCounts, day, prevMonthTailTotal) {
+  const counts = companyCounts || {};
+  for (let d = day - 1; d >= 1; d--) {
+    const t = counts[d]?.total;
+    if (t !== undefined && t !== null) return t;
+  }
+  return prevMonthTailTotal ?? 0;
+}
+
+// T is colored from the total itself, compared to the most recent earlier
+// day that has data (see priorDayTotal) — not from the entry column's
+// delta. Weekends/holidays carry Friday's total forward unchanged (see
+// carry_forward_last_working_day in sql/sync.sql), so this naturally
+// compares Monday against Friday without any weekend-skipping needed here.
+// Doing it this way (rather than relying on the S/B/A delta) means a real
+// increase in trucks always shows on T even if the entry-column delta
+// calc missed it for some reason.
+//   - higher than yesterday AND a new month record -> orange
+//   - higher than yesterday but not a new record (recovered after a dip) -> green
+//   - lower than yesterday -> blue
+//   - unchanged, or no data for either day -> no color
+function totalColor(total, prevTotal, dayPriorMax, isFree) {
+  if (total === undefined || total === null) return null;
+  if (prevTotal === undefined || prevTotal === null) return null;
+  if (total === prevTotal) return null;
+  if (total < prevTotal) return "blue";
+  if (isFree) return "green";
+  return total > dayPriorMax ? "orange" : "green";
 }
 
 // ---------- rendering ----------
@@ -775,9 +813,6 @@ function renderCompanyRow(company, nDays, todayDay) {
   tr.appendChild(tdPrice);
 
   const billingStartsOn = company.billing_starts_on || null;
-  const { max: monthMax, firstDay: redDay } = monthMaxDay(
-    state.counts[company.id], nDays, state.year, state.month, billingStartsOn
-  );
   const entryCol = company.entry_column || "advanced";
 
   for (let d = 1; d <= nDays; d++) {
@@ -786,6 +821,9 @@ function renderCompanyRow(company, nDays, todayDay) {
     const isFree = isFreeDay(state.year, state.month, d, billingStartsOn);
     const isBillingStartDay = billingStartsOn && dateStr(state.year, state.month, d) === billingStartsOn;
     const dayPriorMax = priorMax(state.counts[company.id], d, state.year, state.month, billingStartsOn);
+    const prevTotal = priorDayTotal(
+      state.counts[company.id], d, (state.prevMonthTailCounts || {})[company.id]
+    );
 
     const tdT = document.createElement("td");
     tdT.className = "sub-cell sub-t";
@@ -794,20 +832,23 @@ function renderCompanyRow(company, nDays, todayDay) {
       tdT.classList.add("cell-weekend");
       tdT.title = "Vikend — preneto sa petka";
     }
-    if (d === redDay || isBillingStartDay) tdT.classList.add("cell-red");
-    if (isBillingStartDay) tdT.title = "Kraj besplatnog perioda — naplata počinje";
+    if (isBillingStartDay) {
+      tdT.classList.add("cell-red");
+      tdT.title = "Kraj besplatnog perioda — naplata počinje";
+    } else {
+      const tColor = totalColor(dayData.total, prevTotal, dayPriorMax, isFree);
+      if (tColor === "orange") tdT.classList.add("cell-orange");
+      else if (tColor === "green") tdT.classList.add("cell-green");
+      else if (tColor === "blue") tdT.classList.add("cell-blue");
+    }
 
     // ELD sync runs at 15:00; before that today's total isn't in yet, so
     // carry yesterday's number forward as a placeholder. Na 1. u mesecu
     // "juce" nije u ovoj (novoj) mesecnoj tabeli, nego je poslednji dan
     // prethodnog meseca (state.prevMonthTailCounts).
     if (isToday && (dayData.total === undefined || dayData.total === null)) {
-      const yesterdayTotal =
-        d === 1
-          ? (state.prevMonthTailCounts || {})[company.id]
-          : (state.counts[company.id] || {})[d - 1]?.total;
-      if (yesterdayTotal !== undefined && yesterdayTotal !== null) {
-        tdT.textContent = fmtCell(yesterdayTotal);
+      if (prevTotal !== undefined && prevTotal !== null) {
+        tdT.textContent = fmtCell(prevTotal);
         tdT.classList.add("carried-forward");
         tdT.title = "Preneto sa juče — čeka ažuriranje u 15h";
       }
@@ -2506,7 +2547,7 @@ async function generateDailyReport(dateValue) {
   table.className = "report-table report-table-green";
   const thead = document.createElement("thead");
   const headRow = document.createElement("tr");
-  for (const h of ["Firma", "Novi uređaji", "Cena po uređaju", "Iznos"]) {
+  for (const h of ["Firma", "Novi uređaji", "Cena po uređaju", "Iznos", "Faktura"]) {
     headRow.appendChild(el_("th", null, h));
   }
   thead.appendChild(headRow);
@@ -2516,7 +2557,7 @@ async function generateDailyReport(dateValue) {
   if (detailRows.length === 0) {
     const tr = document.createElement("tr");
     const td = el_("td", "section-hint", "Nema aktivacija current firmi ovog dana");
-    td.colSpan = 4;
+    td.colSpan = 5;
     td.style.textAlign = "center";
     tr.appendChild(td);
     tbody.appendChild(tr);
@@ -2527,6 +2568,12 @@ async function generateDailyReport(dateValue) {
       tr.appendChild(el_("td", null, String(r.added)));
       tr.appendChild(el_("td", null, r.proratedPrice.toFixed(2)));
       tr.appendChild(el_("td", null, r.amount.toFixed(2)));
+      const tdInvoice = el_("td", null);
+      const invoiceBtn = el_("button", "btn invoice-report-btn", "Napravi fakturu");
+      invoiceBtn.type = "button";
+      invoiceBtn.addEventListener("click", () => openInvoiceModal(r, dateValue));
+      tdInvoice.appendChild(invoiceBtn);
+      tr.appendChild(tdInvoice);
       tbody.appendChild(tr);
     }
   }
@@ -2544,6 +2591,224 @@ async function generateDailyReport(dateValue) {
   detailSection.appendChild(table);
   el.reportContent.appendChild(detailSection);
 }
+
+// ---------- fakture (Detaljan prikaz > "Napravi fakturu") ----------
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+function fmtUsd(n) {
+  return Number(n).toFixed(2);
+}
+
+// dateValue je "YYYY-MM-DD" (isti format kao dateStr/invoice_date) -> "MM/DD/YYYY"
+function fmtInvoiceDate(dateValue) {
+  const [y, m, d] = dateValue.split("-");
+  return `${m}/${d}/${y}`;
+}
+
+function invoiceProductLabel(entryColumn) {
+  return entryColumn === "basic" ? "VRH BASIC PACKAGE" : "VRH ADVANCED PACKAGE";
+}
+
+// Jedna faktura po firmi po danu — ponovni klik na "Napravi fakturu" za isti
+// red vraća već postojeću (isti broj), ne pravi duplikat (unique constraint
+// na (company_id, invoice_date) u sql/invoices.sql).
+async function getOrCreateInvoice(detailRow, dateValue) {
+  const company = detailRow.company;
+
+  const { data: existing, error: selErr } = await supabase
+    .from("invoices")
+    .select("*")
+    .eq("company_id", company.id)
+    .eq("invoice_date", dateValue)
+    .maybeSingle();
+  if (selErr) throw selErr;
+  if (existing) return existing;
+
+  const productLabel = invoiceProductLabel(company.entry_column || "advanced");
+  const { data: created, error: insErr } = await supabase
+    .from("invoices")
+    .insert({
+      company_id: company.id,
+      invoice_date: dateValue,
+      description: `${productLabel} — Mesečna pretplata, srazmerno preostalim danima (${fmtInvoiceDate(dateValue)})`,
+      qty: detailRow.added,
+      rate: detailRow.proratedPrice,
+      amount: detailRow.amount,
+    })
+    .select()
+    .single();
+  if (insErr) throw insErr;
+  return created;
+}
+
+// Ista HTML markup se koristi i za prikaz u popup-u i kao telo emaila koji se
+// stvarno šalje (WYSIWYG — šta vidiš u popup-u, to stigne u inbox). Stilovi
+// su inline (ne CSS klase) jer email klijenti ignorišu <style> tagove/spoljni
+// CSS.
+function buildInvoiceHtml(invoice, company) {
+  const billName = escapeHtml(company.contact_name || company.name);
+  const addressLines = (company.address || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => `${escapeHtml(l)}<br>`)
+    .join("");
+  const dateFmt = fmtInvoiceDate(invoice.invoice_date);
+
+  return `
+<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; max-width:600px; margin:0 auto;">
+  <p>Poštovani/Poštovana ${billName},</p>
+  <p>U prilogu je vaša faktura. Ukoliko imate pitanja ili nejasnoća, javite nam se na
+    <a href="mailto:info@vrheld.com">info@vrheld.com</a> ili na +1&nbsp;(630)&nbsp;286-1674.</p>
+  <p>Hvala na poverenju.<br>VRH Tracking Technologies LLC</p>
+
+  <h2 style="border-bottom:2px solid #2563eb; padding-bottom:8px; font-size:18px; margin-top:24px;">INVOICE</h2>
+
+  <table style="width:100%; background:#f1f3f5; border-collapse:collapse; margin-top:8px;">
+    <tr>
+      <td style="vertical-align:top; padding:16px; font-size:13px; line-height:1.5;">
+        <strong>VRH Tracking Technologies LLC</strong><br>
+        734 NE 90th St<br>
+        Miami, FL 33138<br>
+        info@vrheld.com<br>
+        +1 (630) 286-1674
+      </td>
+      <td style="vertical-align:top; padding:16px; font-size:13px; line-height:1.5;">
+        <strong>Bill To</strong><br>
+        ${billName}<br>
+        ${escapeHtml(company.name)}<br>
+        ${addressLines}
+      </td>
+      <td style="vertical-align:top; padding:16px; font-size:13px; line-height:1.5; white-space:nowrap;">
+        Invoice #: ${invoice.invoice_number}<br>
+        Invoice date: ${dateFmt}<br>
+        Due date: ${dateFmt}<br>
+        Terms: Due on receipt
+      </td>
+    </tr>
+  </table>
+
+  <table style="width:100%; border-collapse:collapse; margin-top:16px;">
+    <thead>
+      <tr style="text-align:left; color:#6b7280; font-size:12px;">
+        <th style="padding:8px 0; border-bottom:1px solid #d0d5dd;">Description</th>
+        <th style="padding:8px 0; border-bottom:1px solid #d0d5dd; text-align:right;">Qty</th>
+        <th style="padding:8px 0; border-bottom:1px solid #d0d5dd; text-align:right;">Rate</th>
+        <th style="padding:8px 0; border-bottom:1px solid #d0d5dd; text-align:right;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding:12px 0; font-size:13px;">${escapeHtml(invoice.description)}</td>
+        <td style="padding:12px 0; font-size:13px; text-align:right;">${invoice.qty}</td>
+        <td style="padding:12px 0; font-size:13px; text-align:right;">$${fmtUsd(invoice.rate)}</td>
+        <td style="padding:12px 0; font-size:13px; text-align:right;">$${fmtUsd(invoice.amount)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table style="width:100%; border-collapse:collapse; margin-top:4px;">
+    <tr style="border-top:2px solid #1f2328;">
+      <td></td>
+      <td style="padding:10px 0; text-align:right; font-weight:700; font-size:13px;">Total</td>
+      <td style="padding:10px 0; text-align:right; font-weight:700; font-size:13px; width:110px;">$${fmtUsd(invoice.amount)}</td>
+    </tr>
+  </table>
+
+  <table style="width:100%; background:#f1f3f5; border-collapse:collapse; margin-top:16px;">
+    <tr>
+      <td style="padding:16px; font-weight:700;">Amount Due</td>
+      <td style="padding:16px; text-align:right; font-weight:700; color:#16a34a; font-size:16px;">$${fmtUsd(invoice.amount)}</td>
+    </tr>
+  </table>
+</div>`;
+}
+
+async function openInvoiceModal(detailRow, dateValue) {
+  const company = detailRow.company;
+  let invoice;
+  try {
+    invoice = await getOrCreateInvoice(detailRow, dateValue);
+  } catch (error) {
+    showToast("Greška pri kreiranju fakture: " + error.message, true);
+    return;
+  }
+
+  state.currentInvoice = invoice;
+  state.currentInvoiceCompany = company;
+
+  el.invoiceModalSubtitle.textContent = `${company.name} — faktura #${invoice.invoice_number}`;
+  el.invoicePreview.innerHTML = buildInvoiceHtml(invoice, company);
+  el.invoiceSendTo.value = invoice.sent_to || company.email || TEST_INVOICE_EMAIL;
+  el.sendInvoiceBtn.textContent = invoice.sent_at
+    ? `Pošalji ponovo (poslato ${new Date(invoice.sent_at).toLocaleString("sr-RS")})`
+    : "Pošalji";
+  el.invoiceModal.hidden = false;
+}
+
+function closeInvoiceModal() {
+  el.invoiceModal.hidden = true;
+  state.currentInvoice = null;
+  state.currentInvoiceCompany = null;
+}
+
+el.closeInvoiceBtn.addEventListener("click", closeInvoiceModal);
+el.invoiceModal.addEventListener("click", (e) => {
+  if (e.target === el.invoiceModal) closeInvoiceModal();
+});
+
+el.sendInvoiceBtn.addEventListener("click", async () => {
+  const invoice = state.currentInvoice;
+  const company = state.currentInvoiceCompany;
+  if (!invoice || !company) return;
+
+  const to = el.invoiceSendTo.value.trim();
+  if (!to) {
+    showToast("Unesi email adresu", true);
+    return;
+  }
+  if (!INVOICE_EMAIL_WORKER_URL) {
+    showToast("Worker za slanje email-a još nije podešen (INVOICE_EMAIL_WORKER_URL u js/app.js)", true);
+    return;
+  }
+
+  el.sendInvoiceBtn.disabled = true;
+  try {
+    const html = buildInvoiceHtml(invoice, company);
+    const resp = await fetch(INVOICE_EMAIL_WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Faktura #${invoice.invoice_number} — VRH Tracking Technologies LLC`,
+        html,
+      }),
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || "Slanje nije uspelo");
+
+    const sentAt = new Date().toISOString();
+    const { error: updErr } = await supabase
+      .from("invoices")
+      .update({ sent_to: to, sent_at: sentAt })
+      .eq("id", invoice.id);
+    if (updErr) throw updErr;
+
+    invoice.sent_to = to;
+    invoice.sent_at = sentAt;
+    showToast(`Faktura poslata na ${to}`);
+    closeInvoiceModal();
+  } catch (error) {
+    showToast("Greška pri slanju: " + error.message, true);
+  } finally {
+    el.sendInvoiceBtn.disabled = false;
+  }
+});
 
 // ---------- behind report (25th of prev month through 24th of this month) ----------
 
@@ -4112,7 +4377,7 @@ function renderSettingsCompanies() {
   const productCols = [...devices, ...connectors];
 
   el.settingsCompaniesHeadRow.innerHTML = "";
-  for (const h of ["Naziv", "Ovlašćeno lice", "Adresa"]) {
+  for (const h of ["Naziv", "Ovlašćeno lice", "Adresa", "Email"]) {
     el.settingsCompaniesHeadRow.appendChild(el_("th", null, h));
   }
   for (const p of productCols) {
@@ -4131,6 +4396,7 @@ function renderSettingsCompanies() {
     tr.appendChild(el_("td", "settings-company-name-cell", company.name));
     tr.appendChild(buildEditableTextCell(company, "contact_name"));
     tr.appendChild(buildEditableTextCell(company, "address"));
+    tr.appendChild(buildEditableTextCell(company, "email"));
     for (const p of productCols) {
       tr.appendChild(buildEditablePriceCell(company.id, p.id, priceMap.get(companyPriceKey(company.id, p.id))));
     }
