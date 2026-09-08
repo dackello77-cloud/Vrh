@@ -8,10 +8,8 @@ const MONTH_NAMES = [
 const SUB_COLS = ["T", "S", "B", "A"];
 const ELD_API_URL = "https://royal-paper-656b.dackello77.workers.dev/";
 // Cloudflare Worker koji stvarno šalje fakturu emailom (Resend API) — vidi
-// worker/invoice-email-worker.js za kod i uputstvo za deploy. Prazno dok se
-// ne deploy-uje i URL ne upiše ovde — dugme "Pošalji" u fakturi do tad javlja
-// grešku umesto da tiho ništa ne uradi.
-const INVOICE_EMAIL_WORKER_URL = "";
+// worker/invoice-email-worker.js za kod i uputstvo za deploy.
+const INVOICE_EMAIL_WORKER_URL = "https://vrh-invoice-email.dackello77.workers.dev/";
 // Test faza: sve fakture idu ovde bez obzira na email upisan kod firme u
 // Podešavanjima (to polje se tek popunjava, za kasnije kad se pređe na
 // slanje na stvarne adrese firmi).
