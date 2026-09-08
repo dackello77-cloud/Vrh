@@ -24,7 +24,7 @@ const LAST_PAGE_KEY = "vrhLastPage";
 const VALID_PAGES = ["home", "overview", "reports", "naplata", "orders", "stock", "settings"];
 const PAGE_LABELS = {
   home: "Početna",
-  overview: "Pregled kamiona",
+  overview: "Pregled uređaja",
   reports: "Izveštaj",
   naplata: "Naplata",
   orders: "Porudžbine",
@@ -2620,8 +2620,20 @@ function fmtInvoiceDateShort(dateValue) {
   return `${m}-${d}`;
 }
 
-function invoiceProductLabel(entryColumn) {
-  return entryColumn === "basic" ? "VRH BASIC PACKAGE" : "VRH ADVANCED PACKAGE";
+// Naziv paketa i osnovni opis stavke na fakturi — po nivou firme (isto S/B/A
+// kao kolone u Pregled uređaja i companyEntryColumn u Podešavanjima). Kad se
+// faktura pravi za konkretan dan, na osnovni opis se dodaje " prorated
+// (MM-DD)" (vidi getOrCreateInvoice) — to je jedini deo koji se menja po danu.
+// TODO: description za "basic" i "start" su privremeno isti kao "advanced" —
+// zameniti pravim tekstom kad korisnik pošalje tačnu formulaciju za te pakete.
+const INVOICE_PACKAGE_INFO = {
+  advanced: { label: "VRH ADVANCED PACKAGE", description: "Basic subscription with level 2 Technical Support" },
+  basic: { label: "VRH BASIC PACKAGE", description: "Basic subscription with level 2 Technical Support" },
+  start: { label: "VRH START PACKAGE", description: "Basic subscription with level 2 Technical Support" },
+};
+
+function invoicePackageInfo(entryColumn) {
+  return INVOICE_PACKAGE_INFO[entryColumn] || INVOICE_PACKAGE_INFO.advanced;
 }
 
 // Jedna faktura po firmi po danu — ponovni klik na "Napravi fakturu" za isti
@@ -2639,13 +2651,13 @@ async function getOrCreateInvoice(detailRow, dateValue) {
   if (selErr) throw selErr;
   if (existing) return existing;
 
-  const productLabel = invoiceProductLabel(company.entry_column || "advanced");
+  const { label: productLabel, description: baseDescription } = invoicePackageInfo(company.entry_column || "advanced");
   const { data: created, error: insErr } = await supabase
     .from("invoices")
     .insert({
       company_id: company.id,
       invoice_date: dateValue,
-      description: `${productLabel} — Basic subscription with level 2 Technical Support prorated (${fmtInvoiceDateShort(dateValue)})`,
+      description: `${productLabel} — ${baseDescription} prorated (${fmtInvoiceDateShort(dateValue)})`,
       qty: detailRow.added,
       rate: detailRow.proratedPrice,
       amount: detailRow.amount,
