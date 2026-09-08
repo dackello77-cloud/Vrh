@@ -2781,9 +2781,9 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
   return `
 <div style="font-family: Helvetica, Arial, sans-serif; color:#393a3d; width:612pt; background:#ffffff;">
   <div style="padding:22pt 45pt 0 32.25pt;">
-    <table style="width:100%; border-collapse:collapse;">
+    <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
       <tr>
-        <td style="vertical-align:top;">
+        <td style="vertical-align:top; width:142pt;">
           <div style="font-size:12pt; font-weight:700; color:#223947; margin-bottom:5pt;">INVOICE</div>
           <div style="font-size:7.5pt; line-height:1.55;">
             <span style="font-weight:700;">VRH Tracking Technologies LLC</span><br>
