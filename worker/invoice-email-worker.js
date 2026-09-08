@@ -67,7 +67,7 @@ export default {
       });
     }
 
-    const { to, subject, html } = body;
+    const { to, subject, html, attachments } = body;
     if (!to || !subject || !html) {
       return new Response(JSON.stringify({ error: "Nedostaje to/subject/html" }), {
         status: 400,
@@ -81,7 +81,13 @@ export default {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ from: FROM_ADDRESS, to: [to], subject, html }),
+      body: JSON.stringify({
+        from: FROM_ADDRESS,
+        to: [to],
+        subject,
+        html,
+        ...(attachments && attachments.length ? { attachments } : {}),
+      }),
     });
 
     const resendData = await resendResp.json();

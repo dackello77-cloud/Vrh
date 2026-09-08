@@ -2649,11 +2649,11 @@ async function getOrCreateInvoice(detailRow, dateValue) {
   return created;
 }
 
-// Ista HTML markup se koristi i za prikaz u popup-u i kao telo emaila koji se
-// stvarno šalje (WYSIWYG — šta vidiš u popup-u, to stigne u inbox). Stilovi
-// su inline (ne CSS klase) jer email klijenti ignorišu <style> tagove/spoljni
-// CSS.
-function buildInvoiceHtml(invoice, company) {
+// Sama faktura (bez pozdravnog teksta) — ovo isto ide i u PDF prilog emaila
+// (vidi buildInvoicePdfBase64) i u telo emaila (buildInvoiceHtml ispod), da
+// izgled uvek bude identičan. Stilovi su inline (ne CSS klase) jer i email
+// klijenti i html2pdf ignorišu <style> tagove/spoljni CSS.
+function buildInvoiceDocumentHtml(invoice, company) {
   const billName = escapeHtml(company.contact_name || company.name);
   const addressLines = (company.address || "")
     .split("\n")
@@ -2664,13 +2664,8 @@ function buildInvoiceHtml(invoice, company) {
   const dateFmt = fmtInvoiceDate(invoice.invoice_date);
 
   return `
-<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; max-width:600px; margin:0 auto;">
-  <p>Poštovani/Poštovana ${billName},</p>
-  <p>U prilogu je vaša faktura. Ukoliko imate pitanja ili nejasnoća, javite nam se na
-    <a href="mailto:info@vrheld.com">info@vrheld.com</a> ili na +1&nbsp;(630)&nbsp;286-1674.</p>
-  <p>Hvala na poverenju.<br>VRH Tracking Technologies LLC</p>
-
-  <h2 style="border-bottom:2px solid #2563eb; padding-bottom:8px; font-size:18px; margin-top:24px;">INVOICE</h2>
+<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; max-width:600px; margin:0 auto; background:#ffffff;">
+  <h2 style="border-bottom:2px solid #2563eb; padding-bottom:8px; font-size:18px; margin-top:0;">INVOICE</h2>
 
   <table style="width:100%; background:#f1f3f5; border-collapse:collapse; margin-top:8px;">
     <tr>
@@ -2732,6 +2727,56 @@ function buildInvoiceHtml(invoice, company) {
 </div>`;
 }
 
+// Telo emaila / prikaz u popup-u — pozdravni tekst + ista faktura kao u PDF
+// prilogu (WYSIWYG: šta vidiš u popup-u, to stigne u inbox, plus PDF u prilogu).
+function buildInvoiceHtml(invoice, company) {
+  const billName = escapeHtml(company.contact_name || company.name);
+  return `
+<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; max-width:600px; margin:0 auto;">
+  <p>Poštovani/Poštovana ${billName},</p>
+  <p>U prilogu je vaša faktura. Ukoliko imate pitanja ili nejasnoća, javite nam se na
+    <a href="mailto:info@vrheld.com">info@vrheld.com</a> ili na +1&nbsp;(630)&nbsp;286-1674.</p>
+  <p>Hvala na poverenju.<br>VRH Tracking Technologies LLC</p>
+  <div style="margin-top:24px;">${buildInvoiceDocumentHtml(invoice, company)}</div>
+</div>`;
+}
+
+// Pravi PDF od iste markup-e (buildInvoiceDocumentHtml) preko html2pdf.js —
+// isti way rendering PDF-a kao dugme "Preuzmi PDF" u Izveštaju (samo ovde
+// output ide kao base64 string za email prilog, ne kao download).
+async function buildInvoicePdfBase64(invoice, company) {
+  // html2canvas vraća canvas visine 0 (prazan PDF) kad je container
+  // pozicioniran van ekrana preko position:fixed/absolute + negativan
+  // offset — umesto toga ga sakrivamo preko overflow:hidden wrapper-a
+  // (visina/širina 0) dok je sam container unutra normalno pozicioniran
+  // (static), što html2canvas ispravno renderuje.
+  const wrapper = document.createElement("div");
+  wrapper.style.overflow = "hidden";
+  wrapper.style.height = "0";
+  wrapper.style.width = "0";
+
+  const container = document.createElement("div");
+  container.style.width = "700px";
+  container.style.background = "#ffffff";
+  container.innerHTML = buildInvoiceDocumentHtml(invoice, company);
+
+  wrapper.appendChild(container);
+  document.body.appendChild(wrapper);
+  try {
+    const dataUri = await html2pdf()
+      .set({
+        margin: 10,
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      })
+      .from(container)
+      .outputPdf("datauristring");
+    return dataUri.split(",")[1];
+  } finally {
+    wrapper.remove();
+  }
+}
+
 async function openInvoiceModal(detailRow, dateValue) {
   const company = detailRow.company;
   let invoice;
@@ -2783,6 +2828,7 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
   el.sendInvoiceBtn.disabled = true;
   try {
     const html = buildInvoiceHtml(invoice, company);
+    const pdfBase64 = await buildInvoicePdfBase64(invoice, company);
     const resp = await fetch(INVOICE_EMAIL_WORKER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -2790,6 +2836,9 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
         to,
         subject: `Faktura #${invoice.invoice_number} — VRH Tracking Technologies LLC`,
         html,
+        attachments: [
+          { filename: `Faktura_${invoice.invoice_number}.pdf`, content: pdfBase64 },
+        ],
       }),
     });
     const result = await resp.json();
