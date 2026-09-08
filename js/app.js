@@ -2771,41 +2771,48 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
   const dateFmt = fmtInvoiceDate(invoice.invoice_date);
   const { product, detail } = invoiceProductAndDetail(invoice.description);
 
+  // Mere (pt), boje i sadržaj su izmereni direktno iz vektorskog PDF-a
+  // screen/Invoice_5252_from_VRH_Tracking_Technologies_LLC.pdf (US Letter,
+  // 612x792pt) preko PyMuPDF-a (font size/pozicije/boje po span-u, i
+  // pozadinski pravougaonici preko page.get_drawings()) — ne procena na oko.
+  // Container je namerno tačno 612pt širok (== širina Letter stranice) i
+  // buildInvoicePdfBase64 koristi jsPDF format:'letter', unit:'pt', margin:0,
+  // tako da nema razmere/stretch — 1pt u ovom HTML-u je tačno 1pt u PDF-u.
   return `
-<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; width:100%; background:#ffffff;">
-  <div style="padding:24px 28px 0 28px;">
+<div style="font-family: Helvetica, Arial, sans-serif; color:#393a3d; width:612pt; background:#ffffff;">
+  <div style="padding:22pt 45pt 0 32.25pt;">
     <table style="width:100%; border-collapse:collapse;">
       <tr>
         <td style="vertical-align:top;">
-          <div style="font-size:22px; font-weight:700; letter-spacing:0.5px; margin-bottom:10px;">INVOICE</div>
-          <div style="font-size:12px; line-height:1.6;">
-            <strong>VRH Tracking Technologies LLC</strong><br>
+          <div style="font-size:12pt; font-weight:700; color:#223947; margin-bottom:5pt;">INVOICE</div>
+          <div style="font-size:7.5pt; line-height:1.55;">
+            <span style="font-weight:700;">VRH Tracking Technologies LLC</span><br>
             734 NE 90th St<br>
             Miami, FL 33138
           </div>
         </td>
-        <td style="vertical-align:top; text-align:right; padding-top:30px; font-size:12px; line-height:1.6;">
+        <td style="vertical-align:top; padding-top:15.5pt; font-size:7.5pt; line-height:1.55;">
           info@vrheld.com<br>
           +1 (630) 286-1674<br>
           http://vrheld.com
         </td>
-        <td style="vertical-align:top; width:70px; text-align:right;">
-          <img src="${VRH_LOGO_DATA_URI}" alt="" style="width:60px; height:auto; display:inline-block;">
+        <td style="vertical-align:top; width:68pt; text-align:right; padding-top:12pt; padding-right:10pt;">
+          <img src="${VRH_LOGO_DATA_URI}" alt="" style="width:68pt; height:auto; display:inline-block;">
         </td>
       </tr>
     </table>
   </div>
 
-  <div style="background:#eceef0; padding:16px 28px; margin-top:20px;">
-    <div style="font-size:11px; font-weight:700; margin-bottom:6px;">Bill to</div>
-    <div style="font-size:12px; line-height:1.6;">
+  <div style="background:#edeff0; padding:15pt 45pt 17pt 32.25pt; margin-top:22pt;">
+    <div style="font-size:7.5pt; font-weight:700; margin-bottom:5pt;">Bill to</div>
+    <div style="font-size:9pt; line-height:1.5;">
       ${billName}<br>
       ${escapeHtml(company.name)}<br>
       ${addressLines}
     </div>
-    <div style="border-top:1px dashed #c3c8ce; margin:16px 0;"></div>
-    <div style="font-size:11px; font-weight:700; margin-bottom:6px;">Invoice details</div>
-    <div style="font-size:12px; line-height:1.6;">
+    <div style="border-top:0.75pt solid #d4d7dc; margin:25pt 0;"></div>
+    <div style="font-size:9pt; font-weight:700; margin-bottom:5pt;">Invoice details</div>
+    <div style="font-size:9pt; line-height:1.5;">
       Invoice no.: ${invoice.invoice_number}<br>
       Terms: Due on receipt<br>
       Invoice date: ${dateFmt}<br>
@@ -2813,37 +2820,36 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
     </div>
   </div>
 
-  <div style="padding:0 28px 24px 28px;">
-    <table style="width:100%; border-collapse:collapse; margin-top:20px; font-size:12px;">
+  <div style="padding:20pt 45pt 30pt 32.25pt;">
+    <table style="width:100%; border-collapse:collapse; font-size:9pt; color:#000000;">
       <thead>
-        <tr style="text-align:left; color:#6b7280;">
-          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:20px;">#</th>
-          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:60px;">Date</th>
-          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Product or service</th>
-          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Description</th>
-          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:36px;">Qty</th>
-          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:70px;">Rate</th>
-          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:80px;">Amount</th>
+        <tr style="text-align:left;">
+          <th style="padding-bottom:8pt; border-bottom:0.75pt solid #e3e5e8; font-weight:400; width:18pt;">#</th>
+          <th style="padding-bottom:8pt; border-bottom:0.75pt solid #e3e5e8; font-weight:400; width:50pt;">Date</th>
+          <th style="padding-bottom:8pt; border-bottom:0.75pt solid #e3e5e8; font-weight:400;">Product or service</th>
+          <th style="padding-bottom:8pt; border-bottom:0.75pt solid #e3e5e8; font-weight:400;">Description</th>
+          <th style="padding-bottom:8pt; border-bottom:0.75pt solid #e3e5e8; font-weight:400; text-align:right; width:32pt;">Qty</th>
+          <th style="padding-bottom:8pt; border-bottom:0.75pt solid #e3e5e8; font-weight:400; text-align:right; width:55pt;">Rate</th>
+          <th style="padding-bottom:8pt; border-bottom:0.75pt solid #e3e5e8; font-weight:400; text-align:right; width:60pt;">Amount</th>
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td style="padding:10px 4px; vertical-align:top;">1.</td>
-          <td style="padding:10px 4px; vertical-align:top;"></td>
-          <td style="padding:10px 4px; vertical-align:top; font-weight:700;">${escapeHtml(product)}</td>
-          <td style="padding:10px 4px; vertical-align:top;">${escapeHtml(detail)}</td>
-          <td style="padding:10px 4px; vertical-align:top; text-align:right;">${invoice.qty}</td>
-          <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.rate)}</td>
-          <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.amount)}</td>
+        <tr style="font-size:8pt; color:#393a3d;">
+          <td style="padding-top:9pt; vertical-align:top;">1.</td>
+          <td style="padding-top:9pt; vertical-align:top;"></td>
+          <td style="padding-top:9pt; vertical-align:top; font-weight:700;">${escapeHtml(product)}</td>
+          <td style="padding-top:9pt; vertical-align:top;">${escapeHtml(detail)}</td>
+          <td style="padding-top:9pt; vertical-align:top; text-align:right;">${invoice.qty}</td>
+          <td style="padding-top:9pt; vertical-align:top; text-align:right;">$${fmtUsd(invoice.rate)}</td>
+          <td style="padding-top:9pt; vertical-align:top; text-align:right;">$${fmtUsd(invoice.amount)}</td>
         </tr>
       </tbody>
     </table>
 
-    <table style="width:100%; border-collapse:collapse; margin-top:4px; font-size:12px;">
-      <tr style="border-top:1px solid #1f2328;">
-        <td style="padding:10px 4px;"></td>
-        <td style="padding:10px 4px; text-align:right; font-weight:700;">Total</td>
-        <td style="padding:10px 4px; text-align:right; font-weight:700; width:80px;">$${fmtUsd(invoice.amount)}</td>
+    <table style="width:195pt; margin-left:auto; border-collapse:collapse; margin-top:8pt;">
+      <tr style="border-top:0.75pt solid #e3e5e8;">
+        <td style="padding-top:8pt; font-size:8pt; font-weight:700; color:#393a3d;">Total</td>
+        <td style="padding-top:8pt; text-align:right; font-weight:700; font-size:12pt; color:#393a3d;">$${fmtUsd(invoice.amount)}</td>
       </tr>
     </table>
   </div>
@@ -2864,18 +2870,21 @@ async function buildInvoicePdfBase64(invoice, company) {
   wrapper.style.width = "0";
 
   const container = document.createElement("div");
-  container.style.width = "700px";
+  container.style.width = "612pt";
   container.style.background = "#ffffff";
   container.innerHTML = buildInvoicePdfDocumentHtml(invoice, company);
 
   wrapper.appendChild(container);
   document.body.appendChild(wrapper);
   try {
+    // format:'letter' (612x792pt, US Letter — isto kao original) + margin:0
+    // jer su margine već deo HTML-a (padding u pt) — container je tačno
+    // 612pt širok, tj. tačno širina strane, bez ikakvog razmeravanja/stretch.
     const dataUri = await html2pdf()
       .set({
-        margin: 10,
-        html2canvas: { scale: 2 },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        margin: 0,
+        html2canvas: { scale: 3 },
+        jsPDF: { unit: "pt", format: "letter", orientation: "portrait" },
       })
       .from(container)
       .outputPdf("datauristring");
