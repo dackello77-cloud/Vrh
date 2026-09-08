@@ -2779,6 +2779,12 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
         +1 (630) 286-1674<br>
         http://vrheld.com
       </td>
+      <td style="vertical-align:top; width:70px; text-align:right;">
+        <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="46" fill="none" stroke="#1e3a5f" stroke-width="4"/>
+          <path d="M28 30 L50 70 L72 30" fill="none" stroke="#1e3a5f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </td>
     </tr>
   </table>
 
