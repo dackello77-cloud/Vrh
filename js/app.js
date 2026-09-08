@@ -2882,8 +2882,8 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
 
     <table style="width:195pt; margin-left:auto; border-collapse:collapse; margin-top:8pt;">
       <tr style="border-top:0.75pt solid #e3e5e8;">
-        <td style="padding-top:8pt; font-size:8pt; font-weight:700; color:#393a3d;">Total</td>
-        <td style="padding-top:8pt; text-align:right; font-weight:700; font-size:12pt; color:#393a3d;">$${fmtUsd(invoice.amount)}</td>
+        <td style="padding:10pt 0 4pt 0; font-size:8pt; line-height:16pt; font-weight:700; color:#393a3d;">Total</td>
+        <td style="padding:10pt 0 4pt 0; text-align:right; font-weight:700; font-size:12pt; line-height:16pt; color:#393a3d;">$${fmtUsd(invoice.amount)}</td>
       </tr>
     </table>
   </div>
