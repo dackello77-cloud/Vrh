@@ -103,6 +103,7 @@ const state = {
   lastCurrentReport: null, // { dateValue, rows } — poslednje generisan Current izveštaj, za "Pošalji u naplatu"
   currentInvoice: null, // otvorena faktura u invoiceModal (red iz "invoices" tabele)
   currentInvoiceCompany: null,
+  currentInvoiceButton: null, // dugme u "Detaljan prikaz" tabeli koje je otvorilo modal — oboji se narandžasto posle uspešnog slanja
   naplata: [],
   naplataLoaded: false,
   naplataTab: "active", // "active" | "closed"
@@ -2469,6 +2470,22 @@ async function generateDailyReport(dateValue) {
   });
   const grandTotal = detailRows.reduce((acc, r) => acc + r.amount, 0);
 
+  // Dugme "Napravi fakturu" je crveno dok faktura nije poslata, i narandžasto
+  // ("Vidi fakturu") čim jeste — pročitaj unapred koje (company_id, dan)
+  // kombinacije iz detailRows već imaju poslatu fakturu.
+  const sentInvoiceCompanyIds = new Set();
+  const detailCompanyIds = detailRows.map((r) => r.company.id);
+  if (detailCompanyIds.length > 0) {
+    const { data: existingInvoices } = await supabase
+      .from("invoices")
+      .select("company_id, sent_at")
+      .eq("invoice_date", dateValue)
+      .in("company_id", detailCompanyIds);
+    for (const inv of existingInvoices || []) {
+      if (inv.sent_at) sentInvoiceCompanyIds.add(inv.company_id);
+    }
+  }
+
   // ---- render ----
   el.reportContent.innerHTML = "";
   el.reportContent.dataset.rendered = "1";
@@ -2572,9 +2589,14 @@ async function generateDailyReport(dateValue) {
       tr.appendChild(el_("td", null, r.proratedPrice.toFixed(2)));
       tr.appendChild(el_("td", null, r.amount.toFixed(2)));
       const tdInvoice = el_("td", null);
-      const invoiceBtn = el_("button", "btn invoice-report-btn", "Napravi fakturu");
+      const alreadySent = sentInvoiceCompanyIds.has(r.company.id);
+      const invoiceBtn = el_(
+        "button",
+        `btn invoice-report-btn${alreadySent ? " invoice-report-btn-sent" : ""}`,
+        alreadySent ? "Vidi fakturu" : "Napravi fakturu"
+      );
       invoiceBtn.type = "button";
-      invoiceBtn.addEventListener("click", () => openInvoiceModal(r, dateValue));
+      invoiceBtn.addEventListener("click", () => openInvoiceModal(r, dateValue, invoiceBtn));
       tdInvoice.appendChild(invoiceBtn);
       tr.appendChild(tdInvoice);
       tbody.appendChild(tr);
@@ -2906,7 +2928,7 @@ async function buildInvoicePdfBase64(invoice, company) {
   }
 }
 
-async function openInvoiceModal(detailRow, dateValue) {
+async function openInvoiceModal(detailRow, dateValue, triggerBtn) {
   const company = detailRow.company;
   let invoice;
   try {
@@ -2918,6 +2940,7 @@ async function openInvoiceModal(detailRow, dateValue) {
 
   state.currentInvoice = invoice;
   state.currentInvoiceCompany = company;
+  state.currentInvoiceButton = triggerBtn || null;
 
   el.invoiceModalSubtitle.textContent = `${company.name} — faktura #${invoice.invoice_number}`;
   el.invoicePreview.innerHTML = buildInvoiceHtml(invoice, company);
@@ -2932,6 +2955,7 @@ function closeInvoiceModal() {
   el.invoiceModal.hidden = true;
   state.currentInvoice = null;
   state.currentInvoiceCompany = null;
+  state.currentInvoiceButton = null;
 }
 
 el.closeInvoiceBtn.addEventListener("click", closeInvoiceModal);
@@ -2982,6 +3006,10 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
 
     invoice.sent_to = to;
     invoice.sent_at = sentAt;
+    if (state.currentInvoiceButton) {
+      state.currentInvoiceButton.textContent = "Vidi fakturu";
+      state.currentInvoiceButton.classList.add("invoice-report-btn-sent");
+    }
     showToast(`Faktura poslata na ${to}`);
     closeInvoiceModal();
   } catch (error) {

@@ -1495,6 +1495,22 @@ table.orders-table th, table.orders-table td {
 .invoice-report-btn {
   font-size: 11px;
   padding: 4px 8px;
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+
+.invoice-report-btn:hover {
+  background: #b91c1c;
+}
+
+.invoice-report-btn-sent {
+  background: #ea580c;
+  border-color: #ea580c;
+}
+
+.invoice-report-btn-sent:hover {
+  background: #c2410c;
 }
 
 .order-form-columns {
