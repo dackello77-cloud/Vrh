@@ -2638,7 +2638,7 @@ async function getOrCreateInvoice(detailRow, dateValue) {
     .insert({
       company_id: company.id,
       invoice_date: dateValue,
-      description: `${productLabel} — Mesečna pretplata, srazmerno preostalim danima (${fmtInvoiceDate(dateValue)})`,
+      description: `${productLabel} — Monthly subscription, prorated for remaining days (${fmtInvoiceDate(dateValue)})`,
       qty: detailRow.added,
       rate: detailRow.proratedPrice,
       amount: detailRow.amount,
@@ -2733,17 +2733,109 @@ function buildInvoiceHtml(invoice, company) {
   const billName = escapeHtml(company.contact_name || company.name);
   return `
 <div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; max-width:600px; margin:0 auto;">
-  <p>Poštovani/Poštovana ${billName},</p>
-  <p>U prilogu je vaša faktura. Ukoliko imate pitanja ili nejasnoća, javite nam se na
-    <a href="mailto:info@vrheld.com">info@vrheld.com</a> ili na +1&nbsp;(630)&nbsp;286-1674.</p>
-  <p>Hvala na poverenju.<br>VRH Tracking Technologies LLC</p>
+  <p>Dear ${billName},</p>
+  <p>Please find your invoice attached. If you have any questions, feel free to reach out to us at
+    <a href="mailto:info@vrheld.com">info@vrheld.com</a> or at +1&nbsp;(630)&nbsp;286-1674.</p>
+  <p>Thank you for your business.<br>VRH Tracking Technologies LLC</p>
   <div style="margin-top:24px;">${buildInvoiceDocumentHtml(invoice, company)}</div>
 </div>`;
 }
 
-// Pravi PDF od iste markup-e (buildInvoiceDocumentHtml) preko html2pdf.js —
-// isti way rendering PDF-a kao dugme "Preuzmi PDF" u Izveštaju (samo ovde
-// output ide kao base64 string za email prilog, ne kao download).
+// Izgled samog PDF priloga — prati tačno strukturu stvarne fakture iz
+// screen/Invoice_5252_from_VRH_Tracking_Technologies_LLC.pdf (odvojeno od
+// buildInvoiceDocumentHtml koji se koristi za telo emaila/preview, taj ima
+// drugačiji, "email" izgled sa Amount Due trakom).
+function invoiceProductAndDetail(description) {
+  const idx = description.indexOf(" — ");
+  if (idx === -1) return { product: description, detail: "" };
+  return { product: description.slice(0, idx), detail: description.slice(idx + 3) };
+}
+
+function buildInvoicePdfDocumentHtml(invoice, company) {
+  const billName = escapeHtml(company.contact_name || company.name);
+  const addressLines = (company.address || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => `${escapeHtml(l)}<br>`)
+    .join("");
+  const dateFmt = fmtInvoiceDate(invoice.invoice_date);
+  const { product, detail } = invoiceProductAndDetail(invoice.description);
+
+  return `
+<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; width:680px; background:#ffffff; padding:24px 28px;">
+  <table style="width:100%; border-collapse:collapse;">
+    <tr>
+      <td style="vertical-align:top;">
+        <div style="font-size:22px; font-weight:700; letter-spacing:0.5px; margin-bottom:10px;">INVOICE</div>
+        <div style="font-size:12px; line-height:1.6;">
+          <strong>VRH Tracking Technologies LLC</strong><br>
+          734 NE 90th St<br>
+          Miami, FL 33138
+        </div>
+      </td>
+      <td style="vertical-align:top; text-align:right; padding-top:30px; font-size:12px; line-height:1.6;">
+        info@vrheld.com<br>
+        +1 (630) 286-1674<br>
+        http://vrheld.com
+      </td>
+    </tr>
+  </table>
+
+  <div style="background:#eceef0; margin-top:20px; padding:16px 20px;">
+    <div style="font-size:11px; font-weight:700; margin-bottom:6px;">Bill to</div>
+    <div style="font-size:12px; line-height:1.6;">
+      ${billName}<br>
+      ${escapeHtml(company.name)}<br>
+      ${addressLines}
+    </div>
+    <div style="border-top:1px dashed #c3c8ce; margin:16px 0;"></div>
+    <div style="font-size:11px; font-weight:700; margin-bottom:6px;">Invoice details</div>
+    <div style="font-size:12px; line-height:1.6;">
+      Invoice no.: ${invoice.invoice_number}<br>
+      Terms: Due on receipt<br>
+      Invoice date: ${dateFmt}<br>
+      Due date: ${dateFmt}
+    </div>
+  </div>
+
+  <table style="width:100%; border-collapse:collapse; margin-top:20px; font-size:12px;">
+    <thead>
+      <tr style="text-align:left; color:#6b7280;">
+        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:20px;">#</th>
+        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:60px;">Date</th>
+        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Product or service</th>
+        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Description</th>
+        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:36px;">Qty</th>
+        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:70px;">Rate</th>
+        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:80px;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="padding:10px 4px; vertical-align:top;">1.</td>
+        <td style="padding:10px 4px; vertical-align:top;"></td>
+        <td style="padding:10px 4px; vertical-align:top; font-weight:700;">${escapeHtml(product)}</td>
+        <td style="padding:10px 4px; vertical-align:top;">${escapeHtml(detail)}</td>
+        <td style="padding:10px 4px; vertical-align:top; text-align:right;">${invoice.qty}</td>
+        <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.rate)}</td>
+        <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.amount)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table style="width:100%; border-collapse:collapse; margin-top:4px; font-size:12px;">
+    <tr style="border-top:1px solid #1f2328;">
+      <td style="padding:10px 4px;"></td>
+      <td style="padding:10px 4px; text-align:right; font-weight:700;">Total</td>
+      <td style="padding:10px 4px; text-align:right; font-weight:700; width:80px;">$${fmtUsd(invoice.amount)}</td>
+    </tr>
+  </table>
+</div>`;
+}
+
+// Pravi PDF preko html2pdf.js (isti way rendering kao dugme "Preuzmi PDF" u
+// Izveštaju) — output ide kao base64 string za email prilog, ne kao download.
 async function buildInvoicePdfBase64(invoice, company) {
   // html2canvas vraća canvas visine 0 (prazan PDF) kad je container
   // pozicioniran van ekrana preko position:fixed/absolute + negativan
@@ -2758,7 +2850,7 @@ async function buildInvoicePdfBase64(invoice, company) {
   const container = document.createElement("div");
   container.style.width = "700px";
   container.style.background = "#ffffff";
-  container.innerHTML = buildInvoiceDocumentHtml(invoice, company);
+  container.innerHTML = buildInvoicePdfDocumentHtml(invoice, company);
 
   wrapper.appendChild(container);
   document.body.appendChild(wrapper);
