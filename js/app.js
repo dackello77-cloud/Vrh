@@ -2613,6 +2613,13 @@ function fmtInvoiceDate(dateValue) {
   return `${m}/${d}/${y}`;
 }
 
+// "YYYY-MM-DD" -> "MM-DD" (koristi se u opisu stavke, isti format kao na
+// referentnoj fakturi screen/Invoice_5252_from_VRH_Tracking_Technologies_LLC.pdf)
+function fmtInvoiceDateShort(dateValue) {
+  const [, m, d] = dateValue.split("-");
+  return `${m}-${d}`;
+}
+
 function invoiceProductLabel(entryColumn) {
   return entryColumn === "basic" ? "VRH BASIC PACKAGE" : "VRH ADVANCED PACKAGE";
 }
@@ -2638,7 +2645,7 @@ async function getOrCreateInvoice(detailRow, dateValue) {
     .insert({
       company_id: company.id,
       invoice_date: dateValue,
-      description: `${productLabel} — Monthly subscription, prorated for remaining days (${fmtInvoiceDate(dateValue)})`,
+      description: `${productLabel} — Basic subscription with level 2 Technical Support prorated (${fmtInvoiceDateShort(dateValue)})`,
       qty: detailRow.added,
       rate: detailRow.proratedPrice,
       amount: detailRow.amount,
@@ -2763,32 +2770,34 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
   const { product, detail } = invoiceProductAndDetail(invoice.description);
 
   return `
-<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; width:680px; background:#ffffff; padding:24px 28px;">
-  <table style="width:100%; border-collapse:collapse;">
-    <tr>
-      <td style="vertical-align:top;">
-        <div style="font-size:22px; font-weight:700; letter-spacing:0.5px; margin-bottom:10px;">INVOICE</div>
-        <div style="font-size:12px; line-height:1.6;">
-          <strong>VRH Tracking Technologies LLC</strong><br>
-          734 NE 90th St<br>
-          Miami, FL 33138
-        </div>
-      </td>
-      <td style="vertical-align:top; text-align:right; padding-top:30px; font-size:12px; line-height:1.6;">
-        info@vrheld.com<br>
-        +1 (630) 286-1674<br>
-        http://vrheld.com
-      </td>
-      <td style="vertical-align:top; width:70px; text-align:right;">
-        <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="50" cy="50" r="46" fill="none" stroke="#1e3a5f" stroke-width="4"/>
-          <path d="M28 30 L50 70 L72 30" fill="none" stroke="#1e3a5f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </td>
-    </tr>
-  </table>
+<div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; width:680px; background:#ffffff;">
+  <div style="padding:24px 28px 0 28px;">
+    <table style="width:100%; border-collapse:collapse;">
+      <tr>
+        <td style="vertical-align:top;">
+          <div style="font-size:22px; font-weight:700; letter-spacing:0.5px; margin-bottom:10px;">INVOICE</div>
+          <div style="font-size:12px; line-height:1.6;">
+            <strong>VRH Tracking Technologies LLC</strong><br>
+            734 NE 90th St<br>
+            Miami, FL 33138
+          </div>
+        </td>
+        <td style="vertical-align:top; text-align:right; padding-top:30px; font-size:12px; line-height:1.6;">
+          info@vrheld.com<br>
+          +1 (630) 286-1674<br>
+          http://vrheld.com
+        </td>
+        <td style="vertical-align:top; width:70px; text-align:right;">
+          <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#1e3a5f" stroke-width="4"/>
+            <path d="M28 30 L50 70 L72 30" fill="none" stroke="#1e3a5f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </td>
+      </tr>
+    </table>
+  </div>
 
-  <div style="background:#eceef0; margin-top:20px; padding:16px 20px;">
+  <div style="background:#eceef0; padding:16px 28px; margin-top:20px;">
     <div style="font-size:11px; font-weight:700; margin-bottom:6px;">Bill to</div>
     <div style="font-size:12px; line-height:1.6;">
       ${billName}<br>
@@ -2805,38 +2814,40 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
     </div>
   </div>
 
-  <table style="width:100%; border-collapse:collapse; margin-top:20px; font-size:12px;">
-    <thead>
-      <tr style="text-align:left; color:#6b7280;">
-        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:20px;">#</th>
-        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:60px;">Date</th>
-        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Product or service</th>
-        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Description</th>
-        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:36px;">Qty</th>
-        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:70px;">Rate</th>
-        <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:80px;">Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td style="padding:10px 4px; vertical-align:top;">1.</td>
-        <td style="padding:10px 4px; vertical-align:top;"></td>
-        <td style="padding:10px 4px; vertical-align:top; font-weight:700;">${escapeHtml(product)}</td>
-        <td style="padding:10px 4px; vertical-align:top;">${escapeHtml(detail)}</td>
-        <td style="padding:10px 4px; vertical-align:top; text-align:right;">${invoice.qty}</td>
-        <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.rate)}</td>
-        <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.amount)}</td>
-      </tr>
-    </tbody>
-  </table>
+  <div style="padding:0 28px 24px 28px;">
+    <table style="width:100%; border-collapse:collapse; margin-top:20px; font-size:12px;">
+      <thead>
+        <tr style="text-align:left; color:#6b7280;">
+          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:20px;">#</th>
+          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; width:60px;">Date</th>
+          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Product or service</th>
+          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd;">Description</th>
+          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:36px;">Qty</th>
+          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:70px;">Rate</th>
+          <th style="padding:6px 4px; border-bottom:1px solid #d0d5dd; text-align:right; width:80px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:10px 4px; vertical-align:top;">1.</td>
+          <td style="padding:10px 4px; vertical-align:top;"></td>
+          <td style="padding:10px 4px; vertical-align:top; font-weight:700;">${escapeHtml(product)}</td>
+          <td style="padding:10px 4px; vertical-align:top;">${escapeHtml(detail)}</td>
+          <td style="padding:10px 4px; vertical-align:top; text-align:right;">${invoice.qty}</td>
+          <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.rate)}</td>
+          <td style="padding:10px 4px; vertical-align:top; text-align:right;">$${fmtUsd(invoice.amount)}</td>
+        </tr>
+      </tbody>
+    </table>
 
-  <table style="width:100%; border-collapse:collapse; margin-top:4px; font-size:12px;">
-    <tr style="border-top:1px solid #1f2328;">
-      <td style="padding:10px 4px;"></td>
-      <td style="padding:10px 4px; text-align:right; font-weight:700;">Total</td>
-      <td style="padding:10px 4px; text-align:right; font-weight:700; width:80px;">$${fmtUsd(invoice.amount)}</td>
-    </tr>
-  </table>
+    <table style="width:100%; border-collapse:collapse; margin-top:4px; font-size:12px;">
+      <tr style="border-top:1px solid #1f2328;">
+        <td style="padding:10px 4px;"></td>
+        <td style="padding:10px 4px; text-align:right; font-weight:700;">Total</td>
+        <td style="padding:10px 4px; text-align:right; font-weight:700; width:80px;">$${fmtUsd(invoice.amount)}</td>
+      </tr>
+    </table>
+  </div>
 </div>`;
 }
 

@@ -1,13 +1,18 @@
--- VRH: fakture napravljene pre nego što je opis prebačen na engleski
--- (commit "PDF faktura: ... sve na engleskom") imaju stari srpski tekst
--- trajno upisan u invoices.description — ovo ga prevodi na već poslate/
--- postojeće redove. Nove fakture od sad idu direktno na engleskom.
+-- VRH: fakture napravljene pre nego što je tekst opisa usklađen sa stvarnom
+-- fakturom (screen/Invoice_5252_from_VRH_Tracking_Technologies_LLC.pdf) imaju
+-- stari tekst (srpski, ili raniju englesku verziju) trajno upisan u
+-- invoices.description — ovo ga ponovo generiše iz invoice_date + tipa
+-- paketa firme, isto kao što nove fakture rade od sad.
 -- Pokreni u Supabase SQL Editor-u. Bezbedno je pokrenuti više puta.
 
-update invoices
-set description = replace(
-  description,
-  'Mesečna pretplata, srazmerno preostalim danima',
-  'Monthly subscription, prorated for remaining days'
+update invoices i
+set description = (
+  select
+    (case when c.entry_column = 'basic' then 'VRH BASIC PACKAGE' else 'VRH ADVANCED PACKAGE' end)
+    || ' — Basic subscription with level 2 Technical Support prorated ('
+    || to_char(i.invoice_date, 'MM-DD') || ')'
+  from companies c
+  where c.id = i.company_id
 )
-where description like '%Mesečna pretplata, srazmerno preostalim danima%';
+where i.description like '%Mesečna pretplata%'
+   or i.description like '%Monthly subscription, prorated for remaining days%';
