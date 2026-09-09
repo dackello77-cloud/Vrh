@@ -749,10 +749,40 @@
     </div>
   </div>
 
+  <div id="behindInvoiceModal" class="modal-overlay" hidden>
+    <div class="modal modal-wide modal-behind-wide">
+      <h2>Behind faktura</h2>
+      <p id="behindInvoiceModalSubtitle" class="modal-subtitle"></p>
+      <div id="behindInvoiceSummaryLine" class="manual-invoice-auto-summary"></div>
+
+      <div id="behindInvoiceItems" class="manual-invoice-items"></div>
+      <div class="manual-invoice-add-row">
+        <button type="button" id="addBehindBasicRowBtn" class="btn manual-invoice-add-btn">+ Dodaj Basic stavku</button>
+        <button type="button" id="addBehindAdvancedRowBtn" class="btn manual-invoice-add-btn">+ Dodaj Advanced stavku</button>
+      </div>
+
+      <div id="behindInvoiceTotal" class="manual-invoice-total">Ukupno: $0.00</div>
+
+      <h3 class="manual-invoice-preview-title">Pregled fakture</h3>
+      <div id="behindInvoicePreview" class="invoice-preview"></div>
+
+      <label class="invoice-send-row">
+        Pošalji na
+        <input type="email" id="behindInvoiceSendTo" />
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" id="closeBehindInvoiceBtn" class="btn">Zatvori</button>
+        <button type="button" id="saveBehindInvoiceBtn" class="btn">Sačuvaj</button>
+        <button type="button" id="sendBehindInvoiceBtn" class="btn btn-primary">Pošalji</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" hidden></div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
-  <script type="module" src="js/app.js?v=20260908j"></script>
+  <script type="module" src="js/app.js?v=20260909g"></script>
 </body>
 </html>

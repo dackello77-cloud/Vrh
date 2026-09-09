@@ -104,6 +104,10 @@ const state = {
   currentInvoice: null, // otvorena faktura u invoiceModal (red iz "invoices" tabele)
   currentInvoiceCompany: null,
   currentInvoiceButton: null, // dugme u "Detaljan prikaz" tabeli koje je otvorilo modal — oboji se narandžasto posle uspešnog slanja
+  manualInvoice: null, // otvorena faktura u behindInvoiceModal (red iz "invoices" tabele, manual: true)
+  manualInvoiceCompany: null,
+  manualInvoiceItems: [], // [{ id, type: "basic"|"advanced", note, qty, rate }] — editable stavke ručne Behind fakture
+  manualInvoiceButton: null, // dugme u Behind izveštaju koje je otvorilo modal
   naplata: [],
   naplataLoaded: false,
   naplataTab: "active", // "active" | "closed"
@@ -318,6 +322,18 @@ const el = {
   invoiceSendTo: document.getElementById("invoiceSendTo"),
   closeInvoiceBtn: document.getElementById("closeInvoiceBtn"),
   sendInvoiceBtn: document.getElementById("sendInvoiceBtn"),
+  behindInvoiceModal: document.getElementById("behindInvoiceModal"),
+  behindInvoiceModalSubtitle: document.getElementById("behindInvoiceModalSubtitle"),
+  behindInvoiceSummaryLine: document.getElementById("behindInvoiceSummaryLine"),
+  behindInvoiceItems: document.getElementById("behindInvoiceItems"),
+  addBehindBasicRowBtn: document.getElementById("addBehindBasicRowBtn"),
+  addBehindAdvancedRowBtn: document.getElementById("addBehindAdvancedRowBtn"),
+  behindInvoiceTotal: document.getElementById("behindInvoiceTotal"),
+  behindInvoicePreview: document.getElementById("behindInvoicePreview"),
+  behindInvoiceSendTo: document.getElementById("behindInvoiceSendTo"),
+  closeBehindInvoiceBtn: document.getElementById("closeBehindInvoiceBtn"),
+  saveBehindInvoiceBtn: document.getElementById("saveBehindInvoiceBtn"),
+  sendBehindInvoiceBtn: document.getElementById("sendBehindInvoiceBtn"),
   pageLogin: document.getElementById("pageLogin"),
   loginForm: document.getElementById("loginForm"),
   loginEmail: document.getElementById("loginEmail"),
@@ -2694,7 +2710,7 @@ async function getOrCreateInvoice(detailRow, dateValue) {
 // (vidi buildInvoicePdfBase64) i u telo emaila (buildInvoiceHtml ispod), da
 // izgled uvek bude identičan. Stilovi su inline (ne CSS klase) jer i email
 // klijenti i html2pdf ignorišu <style> tagove/spoljni CSS.
-function buildInvoiceDocumentHtml(invoice, company) {
+function buildInvoiceDocumentHtml(invoice, company, items) {
   const billName = escapeHtml(company.contact_name || company.name);
   const addressLines = (company.address || "")
     .split("\n")
@@ -2703,6 +2719,8 @@ function buildInvoiceDocumentHtml(invoice, company) {
     .map((l) => `${escapeHtml(l)}<br>`)
     .join("");
   const dateFmt = fmtInvoiceDate(invoice.invoice_date);
+  const rows = items && items.length ? items : [invoice];
+  const total = items && items.length ? items.reduce((acc, it) => acc + Number(it.amount), 0) : invoice.amount;
 
   return `
 <div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; max-width:600px; margin:0 auto; background:#ffffff;">
@@ -2742,12 +2760,13 @@ function buildInvoiceDocumentHtml(invoice, company) {
       </tr>
     </thead>
     <tbody>
+      ${rows.map((r) => `
       <tr>
-        <td style="padding:12px 0; font-size:13px;">${escapeHtml(invoice.description)}</td>
-        <td style="padding:12px 0; font-size:13px; text-align:right;">${invoice.qty}</td>
-        <td style="padding:12px 0; font-size:13px; text-align:right;">$${fmtUsd(invoice.rate)}</td>
-        <td style="padding:12px 0; font-size:13px; text-align:right;">$${fmtUsd(invoice.amount)}</td>
-      </tr>
+        <td style="padding:12px 0; font-size:13px;">${escapeHtml(r.description)}</td>
+        <td style="padding:12px 0; font-size:13px; text-align:right;">${r.qty}</td>
+        <td style="padding:12px 0; font-size:13px; text-align:right;">$${fmtUsd(r.rate)}</td>
+        <td style="padding:12px 0; font-size:13px; text-align:right;">$${fmtUsd(r.amount)}</td>
+      </tr>`).join("")}
     </tbody>
   </table>
 
@@ -2755,14 +2774,14 @@ function buildInvoiceDocumentHtml(invoice, company) {
     <tr style="border-top:2px solid #1f2328;">
       <td></td>
       <td style="padding:10px 0; text-align:right; font-weight:700; font-size:13px;">Total</td>
-      <td style="padding:10px 0; text-align:right; font-weight:700; font-size:13px; width:110px;">$${fmtUsd(invoice.amount)}</td>
+      <td style="padding:10px 0; text-align:right; font-weight:700; font-size:13px; width:110px;">$${fmtUsd(total)}</td>
     </tr>
   </table>
 
   <table style="width:100%; background:#f1f3f5; border-collapse:collapse; margin-top:16px;">
     <tr>
       <td style="padding:16px; font-weight:700;">Amount Due</td>
-      <td style="padding:16px; text-align:right; font-weight:700; color:#16a34a; font-size:16px;">$${fmtUsd(invoice.amount)}</td>
+      <td style="padding:16px; text-align:right; font-weight:700; color:#16a34a; font-size:16px;">$${fmtUsd(total)}</td>
     </tr>
   </table>
 </div>`;
@@ -2770,7 +2789,7 @@ function buildInvoiceDocumentHtml(invoice, company) {
 
 // Telo emaila / prikaz u popup-u — pozdravni tekst + ista faktura kao u PDF
 // prilogu (WYSIWYG: šta vidiš u popup-u, to stigne u inbox, plus PDF u prilogu).
-function buildInvoiceHtml(invoice, company) {
+function buildInvoiceHtml(invoice, company, items) {
   const billName = escapeHtml(company.contact_name || company.name);
   return `
 <div style="font-family: Arial, Helvetica, sans-serif; color:#1f2328; max-width:600px; margin:0 auto;">
@@ -2778,7 +2797,7 @@ function buildInvoiceHtml(invoice, company) {
   <p>Please find your invoice attached. If you have any questions, feel free to reach out to us at
     <a href="mailto:info@vrheld.com">info@vrheld.com</a> or at +1&nbsp;(630)&nbsp;286-1674.</p>
   <p>Thank you for your business.<br>VRH Tracking Technologies LLC</p>
-  <div style="margin-top:24px;">${buildInvoiceDocumentHtml(invoice, company)}</div>
+  <div style="margin-top:24px;">${buildInvoiceDocumentHtml(invoice, company, items)}</div>
 </div>`;
 }
 
@@ -2794,7 +2813,7 @@ function invoiceProductAndDetail(description) {
   return { product: description.slice(0, idx), detail: description.slice(idx + 3) };
 }
 
-function buildInvoicePdfDocumentHtml(invoice, company) {
+function buildInvoicePdfDocumentHtml(invoice, company, items) {
   const billName = escapeHtml(company.contact_name || company.name);
   const addressLines = (company.address || "")
     .split("\n")
@@ -2803,7 +2822,10 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
     .map((l) => `${escapeHtml(l)}<br>`)
     .join("");
   const dateFmt = fmtInvoiceDate(invoice.invoice_date);
-  const { product, detail } = invoiceProductAndDetail(invoice.description);
+  const rows = items && items.length
+    ? items.map((it, i) => ({ n: i + 1, ...invoiceProductAndDetail(it.description), qty: it.qty, rate: it.rate, amount: it.amount }))
+    : [{ n: 1, ...invoiceProductAndDetail(invoice.description), qty: invoice.qty, rate: invoice.rate, amount: invoice.amount }];
+  const total = items && items.length ? items.reduce((acc, it) => acc + Number(it.amount), 0) : invoice.amount;
 
   // Mere (pt), boje i sadržaj su izmereni direktno iz vektorskog PDF-a
   // screen/Invoice_5252_from_VRH_Tracking_Technologies_LLC.pdf (US Letter,
@@ -2868,22 +2890,23 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
         </tr>
       </thead>
       <tbody>
+        ${rows.map((r) => `
         <tr style="font-size:8pt; color:#393a3d;">
-          <td style="padding-top:9pt; vertical-align:top;">1.</td>
+          <td style="padding-top:9pt; vertical-align:top;">${r.n}.</td>
           <td style="padding-top:9pt; vertical-align:top;"></td>
-          <td style="padding-top:9pt; vertical-align:top; font-weight:700;">${escapeHtml(product)}</td>
-          <td style="padding-top:9pt; vertical-align:top;">${escapeHtml(detail)}</td>
-          <td style="padding-top:9pt; vertical-align:top; text-align:right;">${invoice.qty}</td>
-          <td style="padding-top:9pt; vertical-align:top; text-align:right;">$${fmtUsd(invoice.rate)}</td>
-          <td style="padding-top:9pt; vertical-align:top; text-align:right;">$${fmtUsd(invoice.amount)}</td>
-        </tr>
+          <td style="padding-top:9pt; vertical-align:top; font-weight:700;">${escapeHtml(r.product)}</td>
+          <td style="padding-top:9pt; vertical-align:top;">${escapeHtml(r.detail)}</td>
+          <td style="padding-top:9pt; vertical-align:top; text-align:right;">${r.qty}</td>
+          <td style="padding-top:9pt; vertical-align:top; text-align:right;">$${fmtUsd(r.rate)}</td>
+          <td style="padding-top:9pt; vertical-align:top; text-align:right;">$${fmtUsd(r.amount)}</td>
+        </tr>`).join("")}
       </tbody>
     </table>
 
     <table style="width:195pt; margin-left:auto; border-collapse:collapse; margin-top:8pt;">
       <tr style="border-top:0.75pt solid #e3e5e8;">
         <td style="padding:10pt 0 4pt 0; font-size:8pt; line-height:16pt; font-weight:700; color:#393a3d;">Total</td>
-        <td style="padding:10pt 0 4pt 0; text-align:right; font-weight:700; font-size:12pt; line-height:16pt; color:#393a3d;">$${fmtUsd(invoice.amount)}</td>
+        <td style="padding:10pt 0 4pt 0; text-align:right; font-weight:700; font-size:12pt; line-height:16pt; color:#393a3d;">$${fmtUsd(total)}</td>
       </tr>
     </table>
   </div>
@@ -2892,7 +2915,7 @@ function buildInvoicePdfDocumentHtml(invoice, company) {
 
 // Pravi PDF preko html2pdf.js (isti way rendering kao dugme "Preuzmi PDF" u
 // Izveštaju) — output ide kao base64 string za email prilog, ne kao download.
-async function buildInvoicePdfBase64(invoice, company) {
+async function buildInvoicePdfBase64(invoice, company, items) {
   // html2canvas vraća canvas visine 0 (prazan PDF) kad je container
   // pozicioniran van ekrana preko position:fixed/absolute + negativan
   // offset — umesto toga ga sakrivamo preko overflow:hidden wrapper-a
@@ -2906,7 +2929,7 @@ async function buildInvoicePdfBase64(invoice, company) {
   const container = document.createElement("div");
   container.style.width = "612pt";
   container.style.background = "#ffffff";
-  container.innerHTML = buildInvoicePdfDocumentHtml(invoice, company);
+  container.innerHTML = buildInvoicePdfDocumentHtml(invoice, company, items);
 
   wrapper.appendChild(container);
   document.body.appendChild(wrapper);
@@ -3019,6 +3042,347 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
   }
 });
 
+// ---------- ručna Behind faktura (Behind izveštaj > "Napravi fakturu") ----------
+// Naplata Behind firmi je specifična po firmi (mešavina Basic + više Advanced
+// stavki, svaka sa sopstvenim napomenom npr. "V:772; 4 weeks") i ne uklapa se
+// u jednoobrazan automatski obračun — zato operater ovde ručno pravi fakturu
+// sa proizvoljnim brojem stavki (vidi sql/invoice_items.sql). Automatski
+// obračun iznad (baseline + additions) ostaje kao referenca, faktura se pravi
+// nezavisno od njega.
+
+const ADVANCED_ITEM_DESCRIPTION = "Basic subscription with level 2 Technical Support";
+
+function manualItemDescription(item) {
+  if (item.type === "basic") return "VRH START — Basic subscription";
+  const note = (item.note || "").trim();
+  return `VRH ADVANCED PACKAGE — ${ADVANCED_ITEM_DESCRIPTION}${note ? ` (${note})` : ""}`;
+}
+
+function manualItemAmount(item) {
+  return (Number(item.qty) || 0) * (Number(item.rate) || 0);
+}
+
+function newBasicManualItem(defaultRate) {
+  return { id: null, type: "basic", note: "", qty: 1, rate: defaultRate };
+}
+
+function newAdvancedManualItem(defaultRate) {
+  return { id: null, type: "advanced", note: "", qty: 1, rate: defaultRate };
+}
+
+// Rekonstruiše editabilni oblik stavke iz sačuvanog invoice_items reda —
+// koristi se kad se faktura ponovo otvori (već ima sačuvane stavke). Tip se
+// prepoznaje po opisu (ne po poziciji — redovi se sad mogu dodavati/brisati
+// slobodnim redosledom, Basic više nije uvek prvi).
+function parseManualInvoiceItemRow(row) {
+  if (row.description.startsWith("VRH START —")) {
+    return { id: row.id, type: "basic", note: "", qty: row.qty, rate: row.rate };
+  }
+  const m = row.description.match(/\(([^)]*)\)\s*$/);
+  return { id: row.id, type: "advanced", note: m ? m[1] : "", qty: row.qty, rate: row.rate };
+}
+
+function computeManualInvoiceTotal() {
+  return state.manualInvoiceItems.reduce((acc, item) => acc + manualItemAmount(item), 0);
+}
+
+// Živi pregled fakture (isti "email" izgled kao kod Current faktura) — ne
+// diramo DOM redova (ne bi radio full renderManualInvoiceItems() na svaki
+// tasterr jer bi to izgubilo fokus iz input polja dok se kuca).
+// Samo opis stavki (bez zaglavlja firme/pozdrava/iznosa — to se već vidi u
+// poljima iznad) — služi da se proveri kako će tačno da glasi tekst na fakturi.
+function renderManualInvoicePreview() {
+  if (state.manualInvoiceItems.length === 0) {
+    el.behindInvoicePreview.innerHTML = '<p class="section-hint">Dodaj bar jednu stavku da vidiš pregled fakture.</p>';
+    return;
+  }
+  const ol = document.createElement("ol");
+  ol.className = "manual-invoice-preview-list";
+  for (const item of state.manualInvoiceItems) {
+    ol.appendChild(el_("li", null, manualItemDescription(item)));
+  }
+  el.behindInvoicePreview.innerHTML = "";
+  el.behindInvoicePreview.appendChild(ol);
+}
+
+function refreshManualInvoiceSummary() {
+  el.behindInvoiceTotal.textContent = `Ukupno: $${fmtUsd(computeManualInvoiceTotal())}`;
+  renderManualInvoicePreview();
+}
+
+// Informativni prikaz automatskog obračuna — identična tabela kao u Behind
+// izveštaju (buildBehindCompanyTable), samo referenca, ne menja se dok
+// operater kuca ručne stavke ispod, i ne upisuje se u fakturu.
+function renderAutoCalcSummary(block) {
+  el.behindInvoiceSummaryLine.innerHTML = "";
+  el.behindInvoiceSummaryLine.appendChild(el_("div", "manual-invoice-auto-summary-title", "Automatski obračun (Pregled uređaja):"));
+  el.behindInvoiceSummaryLine.appendChild(buildBehindCompanyTable(block));
+}
+
+function buildManualInvoiceRow(item, index) {
+  const isBasic = item.type === "basic";
+  const row = el_("div", `manual-invoice-row${isBasic ? " manual-invoice-row-basic" : ""}`);
+  row.appendChild(el_("div", "manual-invoice-label", isBasic ? "VRH START — Basic subscription" : `VRH ADVANCED PACKAGE — ${ADVANCED_ITEM_DESCRIPTION}`));
+
+  if (!isBasic) {
+    const noteField = el_("label", "manual-invoice-field manual-invoice-field-note", "Napomena (npr. V:772; 4 weeks)");
+    const noteInput = document.createElement("input");
+    noteInput.type = "text";
+    noteInput.value = item.note;
+    noteInput.placeholder = "V:772; 4 weeks";
+    noteInput.addEventListener("input", () => {
+      item.note = noteInput.value;
+      renderManualInvoicePreview();
+    });
+    noteField.appendChild(noteInput);
+    row.appendChild(noteField);
+  }
+
+  const qtyField = el_("label", "manual-invoice-field manual-invoice-field-qty", "Kol.");
+  const qtyInput = document.createElement("input");
+  qtyInput.type = "number";
+  qtyInput.min = "0";
+  qtyInput.step = "1";
+  qtyInput.value = item.qty;
+  qtyField.appendChild(qtyInput);
+  row.appendChild(qtyField);
+
+  const rateField = el_("label", "manual-invoice-field manual-invoice-field-rate", "Cena");
+  const rateInput = document.createElement("input");
+  rateInput.type = "number";
+  rateInput.min = "0";
+  rateInput.step = "0.01";
+  rateInput.value = item.rate;
+  rateField.appendChild(rateInput);
+  row.appendChild(rateField);
+
+  const amount = el_("div", "manual-invoice-amount", `$${fmtUsd(manualItemAmount(item))}`);
+  const refreshAmount = () => {
+    item.qty = Number(qtyInput.value) || 0;
+    item.rate = Number(rateInput.value) || 0;
+    amount.textContent = `$${fmtUsd(manualItemAmount(item))}`;
+    refreshManualInvoiceSummary();
+  };
+  qtyInput.addEventListener("input", refreshAmount);
+  rateInput.addEventListener("input", refreshAmount);
+  row.appendChild(amount);
+
+  const removeBtn = el_("button", "manual-invoice-remove", "×");
+  removeBtn.type = "button";
+  removeBtn.title = "Ukloni stavku";
+  removeBtn.addEventListener("click", () => {
+    state.manualInvoiceItems.splice(index, 1);
+    renderManualInvoiceItems();
+  });
+  row.appendChild(removeBtn);
+
+  return row;
+}
+
+function renderManualInvoiceItems() {
+  el.behindInvoiceItems.innerHTML = "";
+  state.manualInvoiceItems.forEach((item, index) => {
+    el.behindInvoiceItems.appendChild(buildManualInvoiceRow(item, index));
+  });
+  refreshManualInvoiceSummary();
+}
+
+// Jedna (ručna) faktura po firmi po ciklusu — invoice_date je uvek poslednji
+// dan ciklusa (24.), bez obzira koji je dan izabran u date pickeru izveštaja,
+// da ponovni klik na isti ciklus uvek vrati istu fakturu (isti broj), ne
+// pravi duplikat (unique constraint na (company_id, invoice_date)).
+async function getOrCreateManualInvoice(company, invoiceDateValue) {
+  const { data: existing, error: selErr } = await supabase
+    .from("invoices")
+    .select("*")
+    .eq("company_id", company.id)
+    .eq("invoice_date", invoiceDateValue)
+    .maybeSingle();
+  if (selErr) throw selErr;
+  if (existing) return existing;
+
+  const { data: created, error: insErr } = await supabase
+    .from("invoices")
+    .insert({ company_id: company.id, invoice_date: invoiceDateValue, manual: true, amount: 0 })
+    .select()
+    .single();
+  if (insErr) throw insErr;
+  return created;
+}
+
+async function saveManualInvoiceItems() {
+  const invoice = state.manualInvoice;
+  const rows = state.manualInvoiceItems.map((item, i) => ({
+    invoice_id: invoice.id,
+    position: i,
+    description: manualItemDescription(item),
+    qty: Number(item.qty) || 0,
+    rate: Number(item.rate) || 0,
+    amount: manualItemAmount(item),
+  }));
+
+  const { error: delErr } = await supabase.from("invoice_items").delete().eq("invoice_id", invoice.id);
+  if (delErr) throw delErr;
+
+  let saved = [];
+  if (rows.length > 0) {
+    const { data, error: insErr } = await supabase.from("invoice_items").insert(rows).select();
+    if (insErr) throw insErr;
+    // ne oslanjaj se na redosled vraćen iz baze — sortiraj po position (isto
+    // polje koje smo upisali) da tačno odgovara redosledu u state.manualInvoiceItems
+    saved = data.slice().sort((a, b) => a.position - b.position);
+  }
+
+  const total = saved.reduce((acc, r) => acc + Number(r.amount), 0);
+  const { data: updated, error: updErr } = await supabase
+    .from("invoices")
+    .update({ amount: total })
+    .eq("id", invoice.id)
+    .select()
+    .single();
+  if (updErr) throw updErr;
+
+  state.manualInvoice = updated;
+  // vrati id-jeve novosačuvanih redova u editabilne stavke, po istom redosledu
+  state.manualInvoiceItems.forEach((item, i) => {
+    item.id = saved[i] ? saved[i].id : null;
+  });
+  return saved;
+}
+
+async function openBehindInvoiceModal(block, invoiceDateValue, triggerBtn) {
+  const company = block.company;
+  let invoice;
+  try {
+    invoice = await getOrCreateManualInvoice(company, invoiceDateValue);
+  } catch (error) {
+    showToast("Greška pri kreiranju fakture: " + error.message, true);
+    return;
+  }
+
+  const { data: existingItems, error: itemsErr } = await supabase
+    .from("invoice_items")
+    .select("*")
+    .eq("invoice_id", invoice.id)
+    .order("position", { ascending: true });
+  if (itemsErr) {
+    showToast("Greška pri učitavanju stavki: " + itemsErr.message, true);
+    return;
+  }
+
+  state.manualInvoice = invoice;
+  state.manualInvoiceCompany = company;
+  state.manualInvoiceButton = triggerBtn || null;
+
+  // Prazno po defaultu (bez auto-popune iz automatskog obračuna) — operater
+  // ručno dodaje Basic/Advanced stavke preko dugmadi ispod liste.
+  state.manualInvoiceItems = existingItems ? existingItems.map(parseManualInvoiceItemRow) : [];
+
+  el.behindInvoiceModalSubtitle.textContent = `${company.name} — faktura #${invoice.invoice_number}`;
+  renderAutoCalcSummary(block);
+  renderManualInvoiceItems();
+  el.behindInvoiceSendTo.value = invoice.sent_to || company.email || TEST_INVOICE_EMAIL;
+  el.sendBehindInvoiceBtn.textContent = invoice.sent_at
+    ? `Pošalji ponovo (poslato ${new Date(invoice.sent_at).toLocaleString("sr-RS")})`
+    : "Pošalji";
+  el.behindInvoiceModal.hidden = false;
+}
+
+function closeBehindInvoiceModal() {
+  el.behindInvoiceModal.hidden = true;
+  el.behindInvoiceSummaryLine.innerHTML = "";
+  state.manualInvoice = null;
+  state.manualInvoiceCompany = null;
+  state.manualInvoiceItems = [];
+  state.manualInvoiceButton = null;
+}
+
+el.addBehindBasicRowBtn.addEventListener("click", () => {
+  state.manualInvoiceItems.push(newBasicManualItem(START_TIER_PRICE));
+  renderManualInvoiceItems();
+});
+
+el.addBehindAdvancedRowBtn.addEventListener("click", () => {
+  const defaultRate = state.manualInvoiceCompany ? (state.manualInvoiceCompany.price || 200) : 200;
+  state.manualInvoiceItems.push(newAdvancedManualItem(defaultRate));
+  renderManualInvoiceItems();
+});
+
+el.closeBehindInvoiceBtn.addEventListener("click", closeBehindInvoiceModal);
+el.behindInvoiceModal.addEventListener("click", (e) => {
+  if (e.target === el.behindInvoiceModal) closeBehindInvoiceModal();
+});
+
+el.saveBehindInvoiceBtn.addEventListener("click", async () => {
+  if (!state.manualInvoice) return;
+  el.saveBehindInvoiceBtn.disabled = true;
+  try {
+    await saveManualInvoiceItems();
+    showToast("Faktura sačuvana");
+  } catch (error) {
+    showToast("Greška pri čuvanju: " + error.message, true);
+  } finally {
+    el.saveBehindInvoiceBtn.disabled = false;
+  }
+});
+
+el.sendBehindInvoiceBtn.addEventListener("click", async () => {
+  const company = state.manualInvoiceCompany;
+  if (!state.manualInvoice || !company) return;
+
+  const to = el.behindInvoiceSendTo.value.trim();
+  if (!to) {
+    showToast("Unesi email adresu", true);
+    return;
+  }
+  if (!INVOICE_EMAIL_WORKER_URL) {
+    showToast("Worker za slanje email-a još nije podešen (INVOICE_EMAIL_WORKER_URL u js/app.js)", true);
+    return;
+  }
+
+  el.sendBehindInvoiceBtn.disabled = true;
+  try {
+    const items = await saveManualInvoiceItems();
+    const invoice = state.manualInvoice;
+    const html = buildInvoiceHtml(invoice, company, items);
+    const pdfBase64 = await buildInvoicePdfBase64(invoice, company, items);
+    const resp = await fetch(INVOICE_EMAIL_WORKER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to,
+        subject: `Faktura #${invoice.invoice_number} — VRH Tracking Technologies LLC`,
+        html,
+        attachments: [
+          { filename: `Faktura_${invoice.invoice_number}.pdf`, content: pdfBase64 },
+        ],
+      }),
+    });
+    const result = await resp.json();
+    if (!resp.ok) throw new Error(result.error || "Slanje nije uspelo");
+
+    const sentAt = new Date().toISOString();
+    const { error: updErr } = await supabase
+      .from("invoices")
+      .update({ sent_to: to, sent_at: sentAt })
+      .eq("id", invoice.id);
+    if (updErr) throw updErr;
+
+    invoice.sent_to = to;
+    invoice.sent_at = sentAt;
+    if (state.manualInvoiceButton) {
+      state.manualInvoiceButton.textContent = "Vidi fakturu";
+      state.manualInvoiceButton.classList.add("invoice-report-btn-sent");
+    }
+    showToast(`Faktura poslata na ${to}`);
+    closeBehindInvoiceModal();
+  } catch (error) {
+    showToast("Greška pri slanju: " + error.message, true);
+  } finally {
+    el.sendBehindInvoiceBtn.disabled = false;
+  }
+});
+
 // ---------- behind report (25th of prev month through 24th of this month) ----------
 
 function getCycleDates(year, month) {
@@ -3033,6 +3397,50 @@ function getCycleDates(year, month) {
   for (let d = 25; d <= prevDays; d++) dates.push({ year: prevYear, month: prevMonth, day: d });
   for (let d = 1; d <= 24; d++) dates.push({ year, month, day: d });
   return { prevYear, prevMonth, dates };
+}
+
+// Tabela automatskog obračuna za jednu Behind firmu (Stavka/Uređaji/Cena po
+// uređaju/Iznos) — izdvojena da izgleda identično i u izveštaju ispod i u
+// popup-u ručne fakture (vidi renderAutoCalcSummary).
+function buildBehindCompanyTable(block) {
+  const table = document.createElement("table");
+  table.className = "report-table";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const h of ["Stavka", "Uređaji", "Cena po uređaju", "Iznos"]) {
+    headRow.appendChild(el_("th", null, h));
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  const baseRow = document.createElement("tr");
+  baseRow.appendChild(el_("td", null, `Stanje na ${block.baselineDateLabel} (puna cena)`));
+  baseRow.appendChild(el_("td", null, String(block.baselineCount)));
+  baseRow.appendChild(el_("td", null, block.price.toFixed(2)));
+  baseRow.appendChild(el_("td", null, block.baselineAmount.toFixed(2)));
+  tbody.appendChild(baseRow);
+
+  for (const a of block.additions) {
+    const tr = document.createElement("tr");
+    tr.appendChild(el_("td", null, `Novi uređaj — ${a.date}`));
+    tr.appendChild(el_("td", null, String(a.added)));
+    tr.appendChild(el_("td", null, a.proratedPrice.toFixed(2)));
+    tr.appendChild(el_("td", null, a.amount.toFixed(2)));
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+
+  const tfoot = document.createElement("tfoot");
+  const footRow = document.createElement("tr");
+  const footLabel = el_("td", null, "Ukupno za firmu");
+  footLabel.colSpan = 3;
+  footRow.appendChild(footLabel);
+  footRow.appendChild(el_("td", null, block.companyTotal.toFixed(2)));
+  tfoot.appendChild(footRow);
+  table.appendChild(tfoot);
+
+  return table;
 }
 
 async function generateBehindReport(dateValue) {
@@ -3116,10 +3524,34 @@ async function generateBehindReport(dateValue) {
     const additionsTotal = additions.reduce((acc, a) => acc + a.amount, 0);
     const companyTotal = baselineAmount + additionsTotal;
 
-    companyBlocks.push({ company: c, baselineCount: baselineCount || 0, price, baselineAmount, additions, companyTotal });
+    companyBlocks.push({
+      company: c,
+      baselineCount: baselineCount || 0,
+      baselineDateLabel: dateStr(prevYear, prevMonth, 25),
+      price,
+      baselineAmount,
+      additions,
+      companyTotal,
+    });
   }
 
   const grandTotal = companyBlocks.reduce((acc, b) => acc + b.companyTotal, 0);
+
+  // Faktura po firmi je uvek ista za ceo ciklus (vidi getOrCreateManualInvoice)
+  // — poslednji dan ciklusa (24.), bez obzira koji je dan izabran u date pickeru.
+  const invoiceDateValue = dateStr(year, month, 24);
+  const sentInvoiceCompanyIds = new Set();
+  const blockCompanyIds = companyBlocks.map((b) => b.company.id);
+  if (blockCompanyIds.length > 0) {
+    const { data: existingInvoices } = await supabase
+      .from("invoices")
+      .select("company_id, sent_at")
+      .eq("invoice_date", invoiceDateValue)
+      .in("company_id", blockCompanyIds);
+    for (const inv of existingInvoices || []) {
+      if (inv.sent_at) sentInvoiceCompanyIds.add(inv.company_id);
+    }
+  }
 
   el.reportContent.innerHTML = "";
   el.reportContent.dataset.rendered = "1";
@@ -3136,46 +3568,20 @@ async function generateBehindReport(dateValue) {
 
   for (const block of companyBlocks) {
     const section = el_("section", "report-section");
-    section.appendChild(el_("h2", null, block.company.name));
+    const sectionHeader = el_("div", "report-section-header");
+    sectionHeader.appendChild(el_("h2", null, block.company.name));
+    const alreadySent = sentInvoiceCompanyIds.has(block.company.id);
+    const invoiceBtn = el_(
+      "button",
+      `btn invoice-report-btn${alreadySent ? " invoice-report-btn-sent" : ""}`,
+      alreadySent ? "Vidi fakturu" : "Napravi fakturu"
+    );
+    invoiceBtn.type = "button";
+    invoiceBtn.addEventListener("click", () => openBehindInvoiceModal(block, invoiceDateValue, invoiceBtn));
+    sectionHeader.appendChild(invoiceBtn);
+    section.appendChild(sectionHeader);
 
-    const table = document.createElement("table");
-    table.className = "report-table";
-    const thead = document.createElement("thead");
-    const headRow = document.createElement("tr");
-    for (const h of ["Stavka", "Uređaji", "Cena po uređaju", "Iznos"]) {
-      headRow.appendChild(el_("th", null, h));
-    }
-    thead.appendChild(headRow);
-    table.appendChild(thead);
-
-    const tbody = document.createElement("tbody");
-    const baseRow = document.createElement("tr");
-    baseRow.appendChild(el_("td", null, `Stanje na ${dateStr(prevYear, prevMonth, 25)} (puna cena)`));
-    baseRow.appendChild(el_("td", null, String(block.baselineCount)));
-    baseRow.appendChild(el_("td", null, block.price.toFixed(2)));
-    baseRow.appendChild(el_("td", null, block.baselineAmount.toFixed(2)));
-    tbody.appendChild(baseRow);
-
-    for (const a of block.additions) {
-      const tr = document.createElement("tr");
-      tr.appendChild(el_("td", null, `Novi uređaj — ${a.date}`));
-      tr.appendChild(el_("td", null, String(a.added)));
-      tr.appendChild(el_("td", null, a.proratedPrice.toFixed(2)));
-      tr.appendChild(el_("td", null, a.amount.toFixed(2)));
-      tbody.appendChild(tr);
-    }
-    table.appendChild(tbody);
-
-    const tfoot = document.createElement("tfoot");
-    const footRow = document.createElement("tr");
-    const footLabel = el_("td", null, "Ukupno za firmu");
-    footLabel.colSpan = 3;
-    footRow.appendChild(footLabel);
-    footRow.appendChild(el_("td", null, block.companyTotal.toFixed(2)));
-    tfoot.appendChild(footRow);
-    table.appendChild(tfoot);
-
-    section.appendChild(table);
+    section.appendChild(buildBehindCompanyTable(block));
     el.reportContent.appendChild(section);
   }
 
