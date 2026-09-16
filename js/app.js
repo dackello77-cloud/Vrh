@@ -741,13 +741,13 @@ function render() {
     }
   }
 
-  // current month -> today's count; a past month -> that month's last day
+  // current month -> today's count; a past month -> that month's last day.
+  // Zbir gore mora da broji tačno firme koje se vide u tabeli ispod (vrhCompanies/
+  // rstCompanies, već filtrirane pretragom/statusom) — ranije je brojao withData
+  // (sve firme, bez filtera), pa je zbir mogao da bude veći od onog što se vidi
+  // i kopira iz tabele kad je pretraga/status filter aktivan.
   const referenceDay = isCurrentMonth() ? todayDay : nDays;
-  updateTotals(
-    withData.filter((c) => c.eld_group !== "RST"),
-    withData.filter((c) => c.eld_group === "RST"),
-    referenceDay
-  );
+  updateTotals(vrhCompanies, rstCompanies, referenceDay);
 }
 
 // total for a company as of targetDay, walking backward to the most recent
