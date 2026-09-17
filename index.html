@@ -735,6 +735,11 @@
       <h2>Faktura</h2>
       <p id="invoiceModalSubtitle" class="modal-subtitle"></p>
 
+      <label class="invoice-send-row">
+        Broj računa (QuickBooks)
+        <input type="number" min="1" step="1" id="invoiceNumberInput" />
+      </label>
+
       <div id="invoicePreview" class="invoice-preview"></div>
 
       <label class="invoice-send-row">
@@ -744,7 +749,8 @@
 
       <div class="modal-actions">
         <button type="button" id="closeInvoiceBtn" class="btn">Zatvori</button>
-        <button type="button" id="sendInvoiceBtn" class="btn btn-primary">Pošalji</button>
+        <button type="button" id="saveInvoiceNumberBtn" class="btn btn-primary">Sačuvaj</button>
+        <button type="button" id="sendInvoiceBtn" class="btn">Pošalji</button>
       </div>
     </div>
   </div>
@@ -753,6 +759,12 @@
     <div class="modal modal-wide modal-behind-wide">
       <h2>Behind faktura</h2>
       <p id="behindInvoiceModalSubtitle" class="modal-subtitle"></p>
+
+      <label class="invoice-send-row">
+        Broj računa (QuickBooks)
+        <input type="number" min="1" step="1" id="behindInvoiceNumberInput" />
+      </label>
+
       <div id="behindInvoiceSummaryLine" class="manual-invoice-auto-summary"></div>
 
       <div id="behindInvoiceItems" class="manual-invoice-items"></div>

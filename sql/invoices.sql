@@ -42,3 +42,22 @@ create policy "invoices_write" on invoices
 
 grant select, insert, update on invoices to authenticated;
 grant usage, select on sequence invoice_number_seq to authenticated;
+
+-- Broj računa se sad ručno unosi/potvrđuje u appu (QuickBooks broj), ne
+-- automatski dodeljuje čim se red napravi (vidi js/app.js openInvoiceModal /
+-- saveInvoiceNumberBtn) — inače bi samo OTVARANJE "Napravi fakturu" (i pre
+-- nego što je iko potvrdio broj) odmah trošilo sledeći broj iz niza, pa bi
+-- operater posle dobijao lažan "broj već iskorišćen" kad pokuša da unese
+-- pravi (veći) broj koji misli da je slobodan. Više redova bez broja
+-- (null) je u redu — unique ograničenje ne važi između null vrednosti.
+alter table invoices alter column invoice_number drop not null;
+alter table invoices alter column invoice_number drop default;
+
+-- I dalje ima starih redova koji su broj dobili automatski pre ove izmene
+-- (nikad potvrđenih u Naplati) i koji bi zbog "unique" i dalje lažno
+-- blokirali unos istog broja na drugu fakturu. Stvarna evidencija zauzetih
+-- brojeva je Naplata (naplata.invoice_number), ne ova tabela — provera "da
+-- li je broj slobodan" se sad radi u appu protiv Naplate (vidi
+-- saveInvoiceNumberBtn/saveBehindInvoiceBtn u js/app.js), pa ovo
+-- ograničenje više nije potrebno niti ispravno.
+alter table invoices drop constraint if exists invoices_invoice_number_key;

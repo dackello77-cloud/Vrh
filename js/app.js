@@ -104,10 +104,12 @@ const state = {
   currentInvoice: null, // otvorena faktura u invoiceModal (red iz "invoices" tabele)
   currentInvoiceCompany: null,
   currentInvoiceButton: null, // dugme u "Detaljan prikaz" tabeli koje je otvorilo modal — oboji se narandžasto posle uspešnog slanja
+  currentInvoiceNumberBadge: null, // raspon pored imena firme u "Detaljan prikaz" — upisuje se broj računa kad se sačuva
   manualInvoice: null, // otvorena faktura u behindInvoiceModal (red iz "invoices" tabele, manual: true)
   manualInvoiceCompany: null,
   manualInvoiceItems: [], // [{ id, type: "basic"|"advanced", note, qty, rate }] — editable stavke ručne Behind fakture
   manualInvoiceButton: null, // dugme u Behind izveštaju koje je otvorilo modal
+  manualInvoiceNumberBadge: null, // raspon pored imena firme u Behind izveštaju — upisuje se broj računa kad se sačuva
   naplata: [],
   naplataLoaded: false,
   naplataTab: "active", // "active" | "closed"
@@ -318,12 +320,15 @@ const el = {
   cancelCompanyBtn: document.getElementById("cancelCompanyBtn"),
   invoiceModal: document.getElementById("invoiceModal"),
   invoiceModalSubtitle: document.getElementById("invoiceModalSubtitle"),
+  invoiceNumberInput: document.getElementById("invoiceNumberInput"),
+  saveInvoiceNumberBtn: document.getElementById("saveInvoiceNumberBtn"),
   invoicePreview: document.getElementById("invoicePreview"),
   invoiceSendTo: document.getElementById("invoiceSendTo"),
   closeInvoiceBtn: document.getElementById("closeInvoiceBtn"),
   sendInvoiceBtn: document.getElementById("sendInvoiceBtn"),
   behindInvoiceModal: document.getElementById("behindInvoiceModal"),
   behindInvoiceModalSubtitle: document.getElementById("behindInvoiceModalSubtitle"),
+  behindInvoiceNumberInput: document.getElementById("behindInvoiceNumberInput"),
   behindInvoiceSummaryLine: document.getElementById("behindInvoiceSummaryLine"),
   behindInvoiceItems: document.getElementById("behindInvoiceItems"),
   addBehindBasicRowBtn: document.getElementById("addBehindBasicRowBtn"),
@@ -713,7 +718,14 @@ function render() {
     // 1. u mesecu, pre nego sto danasnji sync upise prvi red, ovaj (novi)
     // mesec jos nema nijedan podatak - ali firma i dalje treba da se vidi
     // ako je imala kamione poslednjeg dana prethodnog meseca (carried-forward
-    // placeholder u renderCompanyRow ce prikazati taj broj).
+    // placeholder u renderCompanyRow ce prikazati taj broj). Samo za 1. u
+    // mesecu - od 2. nadalje ovaj mesec vec ima sopstveni sync (makar
+    // negativan/0), pa ako firma ipak nema nijedan pravi red sa total > 0,
+    // to znaci da stvarno nema kamione i ne treba da se prikazuje (dok se
+    // ne aktivira ponovo) - inace bi firma koja je ugasila uredjaj krajem
+    // prošlog meseca ostala trajno prikazana ceo naredni mesec (vidi Rapid
+    // Exchange, 17.9.2026).
+    if (todayDay !== 1) return false;
     const prevTail = (state.prevMonthTailCounts || {})[company.id];
     return !!(prevTail && prevTail > 0);
   };
@@ -1570,10 +1582,11 @@ async function loadNaplata() {
 }
 
 // A row can't be closed/all-checked until someone has actually looked at
-// it: invoice number assigned, a naplaćeno decision made (true or false —
-// null means "not decided yet"), and a collection date entered.
+// it: a naplaćeno decision made (true or false — null means "not decided
+// yet") and a collection date entered. Broj računa nije uslov — stare
+// stavke (pre fakturisanja kroz app) često ga nemaju.
 function naplataIsIncomplete(row) {
-  return !row.invoice_number || row.collected === null || row.collected === undefined || !row.collection_date;
+  return row.collected === null || row.collected === undefined || !row.collection_date;
 }
 
 // HEHO CORPORATION, North Shore Freight i Brunex Corporation postoje kao
@@ -1641,8 +1654,16 @@ function buildNaplataRow(row, indented = false) {
   const tr = document.createElement("tr");
   if (indented) tr.className = "naplata-child-row";
   const incomplete = naplataIsIncomplete(row);
+  // Rok (datum naplate = naredni četvrtak od trenutka kad je broj računa
+  // sačuvan, vidi applyInvoiceSentToNaplata) je stigao ili prošao, a novac
+  // još nije naplaćen — treperi da skrene pažnju, bez obzira da li je
+  // "collected" već eksplicitno Ne (samo "incomplete" ne pokriva taj slučaj).
+  const todayStr = dateStr(now.getFullYear(), now.getMonth(), now.getDate());
+  const dueOrOverdue = row.collected !== true && !!row.collection_date && row.collection_date <= todayStr;
 
-  tr.appendChild(el_("td", "naplata-status-cell", incomplete ? "▲" : ""));
+  const statusCell = el_("td", `naplata-status-cell${dueOrOverdue ? " naplata-status-blink" : ""}`, (incomplete || dueOrOverdue) ? "▲" : "");
+  if (dueOrOverdue) statusCell.title = "Dospelo za naplatu";
+  tr.appendChild(statusCell);
   tr.appendChild(el_("td", null, row.invoice_date));
   tr.appendChild(el_("td", null, row.invoice_number || "—"));
   tr.appendChild(el_("td", null, row.company_name));
@@ -1666,7 +1687,15 @@ function buildNaplataRow(row, indented = false) {
   collectedBtn.title = "Klikni da promeniš naplaćeno (Da/Ne)";
   collectedBtn.disabled = !naplataEditable;
   collectedBtn.addEventListener("click", () => {
-    updateNaplataField(row.id, "collected", row.collected !== true);
+    const next = row.collected !== true;
+    const patch = { collected: next };
+    // Ne -> Da je trenutak kad je novac stvarno stigao, pa se tada upisuje
+    // i datum naplate (ako već nije ručno unet) — to je ono što otključava
+    // "Zatvoreno" checkbox (naplataIsIncomplete traži i njega).
+    if (next && !row.collection_date) {
+      patch.collection_date = dateStr(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+    updateNaplataFields(row.id, patch);
   });
   collectedTd.appendChild(collectedBtn);
   tr.appendChild(collectedTd);
@@ -1678,7 +1707,7 @@ function buildNaplataRow(row, indented = false) {
   allCheckInput.type = "checkbox";
   allCheckInput.checked = !!row.all_checked;
   allCheckInput.disabled = incomplete || !naplataEditable;
-  allCheckInput.title = incomplete ? "Popuni broj računa, naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
+  allCheckInput.title = incomplete ? "Postavi naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
   allCheckInput.addEventListener("change", () => updateNaplataField(row.id, "all_checked", allCheckInput.checked));
   allCheckTd.appendChild(allCheckInput);
   tr.appendChild(allCheckTd);
@@ -1688,7 +1717,7 @@ function buildNaplataRow(row, indented = false) {
   closedInput.type = "checkbox";
   closedInput.checked = !!row.closed;
   closedInput.disabled = incomplete || !naplataEditable;
-  closedInput.title = incomplete ? "Popuni broj računa, naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
+  closedInput.title = incomplete ? "Postavi naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
   closedInput.addEventListener("change", () => handleClosedToggle(row, closedInput));
   closedTd.appendChild(closedInput);
   tr.appendChild(closedTd);
@@ -1886,18 +1915,22 @@ function renderNaplata() {
   renderNaplataStats();
 }
 
-async function updateNaplataField(id, field, value) {
+async function updateNaplataFields(id, patch) {
   const { error } = await supabase
     .from("naplata")
-    .update({ [field]: value, updated_at: new Date().toISOString() })
+    .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) {
     showToast("Greška: " + error.message, true);
     return;
   }
   const row = state.naplata.find((r) => r.id === id);
-  if (row) row[field] = value;
+  if (row) Object.assign(row, patch);
   renderNaplata();
+}
+
+async function updateNaplataField(id, field, value) {
+  return updateNaplataFields(id, { [field]: value });
 }
 
 // Closing needs no extra input. Reopening (unchecking "Zatvoreno") requires
@@ -1934,6 +1967,87 @@ async function handleClosedToggle(row, checkboxEl) {
   row.closed = false;
   row.comment = newComment;
   renderNaplata();
+}
+
+// Naplata stavka formirana iz dnevnog izveštaja (auto_daily) ostaje
+// "naplaćeno: —" dok se broj računa ne potvrdi u modalu (Sačuvaj broj /
+// Sačuvaj — ne pri samom otvaranju "Napravi fakturu") — tek tada dobija broj
+// fakture, naplaćeno prelazi iz "—" u eksplicitno "Ne", i datum naplate se
+// postavlja na naredni četvrtak (rok za naplatu) ako već nije ručno unet.
+// Kad operater stvarno naplati i klikne "Da" (vidi collectedBtn listener u
+// buildNaplataRow), taj datum ostaje kakav je (operater ga ručno menja u
+// Izmena naplate ako se stvarni datum razlikuje) — to je i trenutak kad se
+// otključava "Zatvoreno" checkbox (naplataIsIncomplete gore).
+function nextThursdayDateStr(fromDate = now) {
+  const day = fromDate.getDay(); // 0=Ned..6=Sub, četvrtak=4
+  const diff = (4 - day + 7) % 7; // 0 = danas je već četvrtak
+  const d = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate() + diff);
+  return dateStr(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
+  if (!invoice.company_id) return;
+  const { data: rows, error: selErr } = await supabase
+    .from("naplata")
+    .select("id, invoice_number, collected, collection_date")
+    .eq("company_id", invoice.company_id)
+    .eq("invoice_date", invoice.invoice_date)
+    .eq("cycle", cycle);
+  if (selErr) {
+    console.error(selErr);
+    return;
+  }
+
+  // Nema još naplata reda za ovaj dan/firmu/ciklus (auto-sync ga za Current
+  // možda još nije stigao da obradi taj dan, a za Behind auto-sync uopšte ne
+  // postoji) — napravi ga ovde ručno, da faktura sigurno uđe u Naplatu.
+  if (!rows || rows.length === 0) {
+    const { data: created, error: insErr } = await supabase
+      .from("naplata")
+      .insert({
+        company_id: invoice.company_id,
+        company_name: companyName,
+        invoice_date: invoice.invoice_date,
+        cycle,
+        amount: invoice.amount,
+        invoice_number: String(invoice.invoice_number),
+        collected: false,
+        collection_date: nextThursdayDateStr(),
+        source: "manual",
+      })
+      .select()
+      .single();
+    if (insErr) {
+      console.error(insErr);
+      showToast("Greška pri upisu u Naplatu: " + insErr.message, true);
+      return;
+    }
+    state.naplata.push(created);
+    if (state.naplataLoaded) renderNaplata();
+    return;
+  }
+
+  for (const row of rows) {
+    const patch = {};
+    if (row.collected === null || row.collected === undefined) patch.collected = false;
+    // Uvek prepiši na trenutni broj (ne samo ako je prazno) — operater može
+    // da izmeni broj računa u modalu posle prvog čuvanja (vidi
+    // saveInvoiceNumberBtn / saveBehindInvoiceBtn), pa Naplata treba da
+    // prati tu izmenu.
+    if (row.invoice_number !== String(invoice.invoice_number)) patch.invoice_number = String(invoice.invoice_number);
+    if (!row.collection_date) patch.collection_date = nextThursdayDateStr();
+    if (Object.keys(patch).length === 0) continue;
+    patch.updated_at = new Date().toISOString();
+
+    const { error: updErr } = await supabase.from("naplata").update(patch).eq("id", row.id);
+    if (updErr) {
+      console.error(updErr);
+      continue;
+    }
+    const localRow = state.naplata.find((r) => r.id === row.id);
+    if (localRow) Object.assign(localRow, patch);
+  }
+  if (state.naplataLoaded) renderNaplata();
 }
 
 el.naplataTabActive.addEventListener("click", () => {
@@ -2486,19 +2600,22 @@ async function generateDailyReport(dateValue) {
   });
   const grandTotal = detailRows.reduce((acc, r) => acc + r.amount, 0);
 
-  // Dugme "Napravi fakturu" je crveno dok faktura nije poslata, i narandžasto
-  // ("Vidi fakturu") čim jeste — pročitaj unapred koje (company_id, dan)
-  // kombinacije iz detailRows već imaju poslatu fakturu.
-  const sentInvoiceCompanyIds = new Set();
+  // Dugme "Napravi fakturu" je crveno dok broj računa nije sačuvan, i
+  // narandžasto ("Vidi fakturu") čim jeste — vidi se po Naplati (invoice_number
+  // se tamo upisuje tek kad se broj potvrdi/sačuva u modalu, vidi
+  // saveInvoiceNumberBtn), ne po samom postojanju "invoices" reda (taj se
+  // pravi odmah pri otvaranju modala, pre nego što je broj potvrđen).
+  const invoiceNumberByCompanyId = new Map();
   const detailCompanyIds = detailRows.map((r) => r.company.id);
   if (detailCompanyIds.length > 0) {
-    const { data: existingInvoices } = await supabase
-      .from("invoices")
-      .select("company_id, sent_at")
+    const { data: naplataRows } = await supabase
+      .from("naplata")
+      .select("company_id, invoice_number")
+      .eq("cycle", "current")
       .eq("invoice_date", dateValue)
       .in("company_id", detailCompanyIds);
-    for (const inv of existingInvoices || []) {
-      if (inv.sent_at) sentInvoiceCompanyIds.add(inv.company_id);
+    for (const row of naplataRows || []) {
+      if (row.invoice_number) invoiceNumberByCompanyId.set(row.company_id, row.invoice_number);
     }
   }
 
@@ -2600,19 +2717,24 @@ async function generateDailyReport(dateValue) {
   } else {
     for (const r of detailRows) {
       const tr = document.createElement("tr");
-      tr.appendChild(el_("td", null, r.name));
+      const existingNumber = invoiceNumberByCompanyId.get(r.company.id);
+      const tdName = el_("td", null, r.name);
+      const invoiceNumberBadge = el_("span", "invoice-number-badge", existingNumber ? `#${existingNumber}` : "");
+      invoiceNumberBadge.hidden = !existingNumber;
+      tdName.appendChild(invoiceNumberBadge);
+      tr.appendChild(tdName);
       tr.appendChild(el_("td", null, String(r.added)));
       tr.appendChild(el_("td", null, r.proratedPrice.toFixed(2)));
       tr.appendChild(el_("td", null, r.amount.toFixed(2)));
       const tdInvoice = el_("td", null);
-      const alreadySent = sentInvoiceCompanyIds.has(r.company.id);
+      const alreadySent = !!existingNumber;
       const invoiceBtn = el_(
         "button",
         `btn invoice-report-btn${alreadySent ? " invoice-report-btn-sent" : ""}`,
         alreadySent ? "Vidi fakturu" : "Napravi fakturu"
       );
       invoiceBtn.type = "button";
-      invoiceBtn.addEventListener("click", () => openInvoiceModal(r, dateValue, invoiceBtn));
+      invoiceBtn.addEventListener("click", () => openInvoiceModal(r, dateValue, invoiceBtn, invoiceNumberBadge));
       tdInvoice.appendChild(invoiceBtn);
       tr.appendChild(tdInvoice);
       tbody.appendChild(tr);
@@ -2951,7 +3073,21 @@ async function buildInvoicePdfBase64(invoice, company, items) {
   }
 }
 
-async function openInvoiceModal(detailRow, dateValue, triggerBtn) {
+// Predlog sledećeg broja (najveći već POTVRĐEN broj + 1) — invoice_number je
+// null dok operater ne potvrdi/sačuva, pa ovo ne broji "rezervisane" ali
+// nikad sačuvane redove (vidi sql/invoices.sql, drop default/not null).
+async function suggestNextInvoiceNumber() {
+  const { data } = await supabase
+    .from("invoices")
+    .select("invoice_number")
+    .not("invoice_number", "is", null)
+    .order("invoice_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data ? Number(data.invoice_number) + 1 : "";
+}
+
+async function openInvoiceModal(detailRow, dateValue, triggerBtn, invoiceNumberBadge) {
   const company = detailRow.company;
   let invoice;
   try {
@@ -2964,9 +3100,16 @@ async function openInvoiceModal(detailRow, dateValue, triggerBtn) {
   state.currentInvoice = invoice;
   state.currentInvoiceCompany = company;
   state.currentInvoiceButton = triggerBtn || null;
+  state.currentInvoiceNumberBadge = invoiceNumberBadge || null;
 
-  el.invoiceModalSubtitle.textContent = `${company.name} — faktura #${invoice.invoice_number}`;
-  el.invoicePreview.innerHTML = buildInvoiceHtml(invoice, company);
+  const suggestedNumber = invoice.invoice_number ?? (await suggestNextInvoiceNumber());
+  el.invoiceModalSubtitle.textContent = `${company.name} — faktura`;
+  el.invoiceNumberInput.value = suggestedNumber;
+  // Pregled/email prikazuju predloženi broj i pre nego što je potvrđen (samo
+  // vizuelno, na kopiji objekta) — invoice.invoice_number ostaje null dok se
+  // stvarno ne sačuva, da poređenje u saveInvoiceNumberBtn ispravno detektuje
+  // da još ništa nije upisano u bazu.
+  el.invoicePreview.innerHTML = buildInvoiceHtml({ ...invoice, invoice_number: suggestedNumber }, company);
   el.invoiceSendTo.value = invoice.sent_to || company.email || TEST_INVOICE_EMAIL;
   el.sendInvoiceBtn.textContent = invoice.sent_at
     ? `Pošalji ponovo (poslato ${new Date(invoice.sent_at).toLocaleString("sr-RS")})`
@@ -2979,7 +3122,72 @@ function closeInvoiceModal() {
   state.currentInvoice = null;
   state.currentInvoiceCompany = null;
   state.currentInvoiceButton = null;
+  state.currentInvoiceNumberBadge = null;
 }
+
+// Klik na "Sačuvaj broj" je trenutak kad se faktura smatra "napravljenom" —
+// tek tada ulazi u Naplatu (broj računa + datum naplate) i u Detaljan
+// prikaz, ne pri samom otvaranju modala (invoice_number iz sekvence je samo
+// predlog dok se ne potvrdi/izmeni ovde, ne konačan broj).
+//
+// "Slobodan" broj se proverava protiv Naplate (stvarna evidencija), ne
+// protiv "invoices" tabele — ta tabela može imati stare/neupotrebljene
+// redove sa brojem koji niko nikad nije potvrdio (vidi sql/invoices.sql).
+async function invoiceNumberTakenInNaplata(number, excludeCompanyId, excludeInvoiceDate) {
+  const { data } = await supabase
+    .from("naplata")
+    .select("company_id, invoice_date")
+    .eq("invoice_number", String(number))
+    .limit(5);
+  return (data || []).some((r) => r.company_id !== excludeCompanyId || r.invoice_date !== excludeInvoiceDate);
+}
+
+el.saveInvoiceNumberBtn.addEventListener("click", async () => {
+  const invoice = state.currentInvoice;
+  if (!invoice) return;
+
+  const typed = parseInt(el.invoiceNumberInput.value, 10);
+  if (!typed || typed < 1) {
+    showToast("Unesi ispravan broj računa", true);
+    return;
+  }
+
+  el.saveInvoiceNumberBtn.disabled = true;
+  try {
+    if (typed !== invoice.invoice_number) {
+      if (await invoiceNumberTakenInNaplata(typed, invoice.company_id, invoice.invoice_date)) {
+        showToast("Taj broj računa je već iskorišćen za drugu fakturu u Naplati", true);
+        return;
+      }
+      const { data: updated, error: updErr } = await supabase
+        .from("invoices")
+        .update({ invoice_number: typed })
+        .eq("id", invoice.id)
+        .select()
+        .single();
+      if (updErr) {
+        showToast("Greška: " + updErr.message, true);
+        return;
+      }
+      invoice.invoice_number = updated.invoice_number;
+      state.currentInvoice = updated;
+    }
+
+    await applyInvoiceSentToNaplata(invoice, "current", state.currentInvoiceCompany?.name);
+    if (state.currentInvoiceButton) {
+      state.currentInvoiceButton.textContent = "Vidi fakturu";
+      state.currentInvoiceButton.classList.add("invoice-report-btn-sent");
+    }
+    if (state.currentInvoiceNumberBadge) {
+      state.currentInvoiceNumberBadge.textContent = `#${invoice.invoice_number}`;
+      state.currentInvoiceNumberBadge.hidden = false;
+    }
+    showToast("Broj računa sačuvan");
+    closeInvoiceModal();
+  } finally {
+    el.saveInvoiceNumberBtn.disabled = false;
+  }
+});
 
 el.closeInvoiceBtn.addEventListener("click", closeInvoiceModal);
 el.invoiceModal.addEventListener("click", (e) => {
@@ -2990,6 +3198,11 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
   const invoice = state.currentInvoice;
   const company = state.currentInvoiceCompany;
   if (!invoice || !company) return;
+
+  if (!invoice.invoice_number) {
+    showToast("Prvo sačuvaj broj računa", true);
+    return;
+  }
 
   const to = el.invoiceSendTo.value.trim();
   if (!to) {
@@ -3029,9 +3242,14 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
 
     invoice.sent_to = to;
     invoice.sent_at = sentAt;
+    await applyInvoiceSentToNaplata(invoice, "current", state.currentInvoiceCompany?.name);
     if (state.currentInvoiceButton) {
       state.currentInvoiceButton.textContent = "Vidi fakturu";
       state.currentInvoiceButton.classList.add("invoice-report-btn-sent");
+    }
+    if (state.currentInvoiceNumberBadge) {
+      state.currentInvoiceNumberBadge.textContent = `#${invoice.invoice_number}`;
+      state.currentInvoiceNumberBadge.hidden = false;
     }
     showToast(`Faktura poslata na ${to}`);
     closeInvoiceModal();
@@ -3250,7 +3468,7 @@ async function saveManualInvoiceItems() {
   return saved;
 }
 
-async function openBehindInvoiceModal(block, invoiceDateValue, triggerBtn) {
+async function openBehindInvoiceModal(block, invoiceDateValue, triggerBtn, invoiceNumberBadge) {
   const company = block.company;
   let invoice;
   try {
@@ -3273,12 +3491,14 @@ async function openBehindInvoiceModal(block, invoiceDateValue, triggerBtn) {
   state.manualInvoice = invoice;
   state.manualInvoiceCompany = company;
   state.manualInvoiceButton = triggerBtn || null;
+  state.manualInvoiceNumberBadge = invoiceNumberBadge || null;
 
   // Prazno po defaultu (bez auto-popune iz automatskog obračuna) — operater
   // ručno dodaje Basic/Advanced stavke preko dugmadi ispod liste.
   state.manualInvoiceItems = existingItems ? existingItems.map(parseManualInvoiceItemRow) : [];
 
-  el.behindInvoiceModalSubtitle.textContent = `${company.name} — faktura #${invoice.invoice_number}`;
+  el.behindInvoiceModalSubtitle.textContent = `${company.name} — faktura`;
+  el.behindInvoiceNumberInput.value = invoice.invoice_number ?? (await suggestNextInvoiceNumber());
   renderAutoCalcSummary(block);
   renderManualInvoiceItems();
   el.behindInvoiceSendTo.value = invoice.sent_to || company.email || TEST_INVOICE_EMAIL;
@@ -3295,6 +3515,7 @@ function closeBehindInvoiceModal() {
   state.manualInvoiceCompany = null;
   state.manualInvoiceItems = [];
   state.manualInvoiceButton = null;
+  state.manualInvoiceNumberBadge = null;
 }
 
 el.addBehindBasicRowBtn.addEventListener("click", () => {
@@ -3315,10 +3536,48 @@ el.behindInvoiceModal.addEventListener("click", (e) => {
 
 el.saveBehindInvoiceBtn.addEventListener("click", async () => {
   if (!state.manualInvoice) return;
+
+  const typed = parseInt(el.behindInvoiceNumberInput.value, 10);
+  if (!typed || typed < 1) {
+    showToast("Unesi ispravan broj računa", true);
+    return;
+  }
+
   el.saveBehindInvoiceBtn.disabled = true;
   try {
     await saveManualInvoiceItems();
+
+    if (typed !== state.manualInvoice.invoice_number) {
+      if (await invoiceNumberTakenInNaplata(typed, state.manualInvoice.company_id, state.manualInvoice.invoice_date)) {
+        showToast("Taj broj računa je već iskorišćen za drugu fakturu u Naplati", true);
+        return;
+      }
+      const { data: updated, error: updErr } = await supabase
+        .from("invoices")
+        .update({ invoice_number: typed })
+        .eq("id", state.manualInvoice.id)
+        .select()
+        .single();
+      if (updErr) {
+        showToast("Greška: " + updErr.message, true);
+        return;
+      }
+      state.manualInvoice = updated;
+    }
+
+    // Faktura ulazi u Naplatu čim je sačuvana, ne tek kad se pošalje na
+    // email — slanje emaila je sad odvojen, opcioni korak.
+    await applyInvoiceSentToNaplata(state.manualInvoice, "behind", state.manualInvoiceCompany?.name);
+    if (state.manualInvoiceButton) {
+      state.manualInvoiceButton.textContent = "Vidi fakturu";
+      state.manualInvoiceButton.classList.add("invoice-report-btn-sent");
+    }
+    if (state.manualInvoiceNumberBadge) {
+      state.manualInvoiceNumberBadge.textContent = `#${state.manualInvoice.invoice_number}`;
+      state.manualInvoiceNumberBadge.hidden = false;
+    }
     showToast("Faktura sačuvana");
+    closeBehindInvoiceModal();
   } catch (error) {
     showToast("Greška pri čuvanju: " + error.message, true);
   } finally {
@@ -3329,6 +3588,11 @@ el.saveBehindInvoiceBtn.addEventListener("click", async () => {
 el.sendBehindInvoiceBtn.addEventListener("click", async () => {
   const company = state.manualInvoiceCompany;
   if (!state.manualInvoice || !company) return;
+
+  if (!state.manualInvoice.invoice_number) {
+    showToast("Prvo sačuvaj broj računa", true);
+    return;
+  }
 
   const to = el.behindInvoiceSendTo.value.trim();
   if (!to) {
@@ -3370,9 +3634,14 @@ el.sendBehindInvoiceBtn.addEventListener("click", async () => {
 
     invoice.sent_to = to;
     invoice.sent_at = sentAt;
+    await applyInvoiceSentToNaplata(invoice, "behind", company?.name);
     if (state.manualInvoiceButton) {
       state.manualInvoiceButton.textContent = "Vidi fakturu";
       state.manualInvoiceButton.classList.add("invoice-report-btn-sent");
+    }
+    if (state.manualInvoiceNumberBadge) {
+      state.manualInvoiceNumberBadge.textContent = `#${invoice.invoice_number}`;
+      state.manualInvoiceNumberBadge.hidden = false;
     }
     showToast(`Faktura poslata na ${to}`);
     closeBehindInvoiceModal();
@@ -3540,16 +3809,20 @@ async function generateBehindReport(dateValue) {
   // Faktura po firmi je uvek ista za ceo ciklus (vidi getOrCreateManualInvoice)
   // — poslednji dan ciklusa (24.), bez obzira koji je dan izabran u date pickeru.
   const invoiceDateValue = dateStr(year, month, 24);
-  const sentInvoiceCompanyIds = new Set();
+  // Vidi se po Naplati (invoice_number se tamo upisuje tek kad se "Sačuvaj"
+  // klikne sa potvrđenim brojem, vidi saveBehindInvoiceBtn) — ne po samom
+  // postojanju "invoices" reda (taj se pravi odmah pri otvaranju modala).
+  const invoiceNumberByCompanyId = new Map();
   const blockCompanyIds = companyBlocks.map((b) => b.company.id);
   if (blockCompanyIds.length > 0) {
-    const { data: existingInvoices } = await supabase
-      .from("invoices")
-      .select("company_id, sent_at")
+    const { data: naplataRows } = await supabase
+      .from("naplata")
+      .select("company_id, invoice_number")
+      .eq("cycle", "behind")
       .eq("invoice_date", invoiceDateValue)
       .in("company_id", blockCompanyIds);
-    for (const inv of existingInvoices || []) {
-      if (inv.sent_at) sentInvoiceCompanyIds.add(inv.company_id);
+    for (const row of naplataRows || []) {
+      if (row.invoice_number) invoiceNumberByCompanyId.set(row.company_id, row.invoice_number);
     }
   }
 
@@ -3570,14 +3843,18 @@ async function generateBehindReport(dateValue) {
     const section = el_("section", "report-section");
     const sectionHeader = el_("div", "report-section-header");
     sectionHeader.appendChild(el_("h2", null, block.company.name));
-    const alreadySent = sentInvoiceCompanyIds.has(block.company.id);
+    const existingNumber = invoiceNumberByCompanyId.get(block.company.id);
+    const invoiceNumberBadge = el_("span", "invoice-number-badge", existingNumber ? `#${existingNumber}` : "");
+    invoiceNumberBadge.hidden = !existingNumber;
+    sectionHeader.appendChild(invoiceNumberBadge);
+    const alreadySent = !!existingNumber;
     const invoiceBtn = el_(
       "button",
       `btn invoice-report-btn${alreadySent ? " invoice-report-btn-sent" : ""}`,
       alreadySent ? "Vidi fakturu" : "Napravi fakturu"
     );
     invoiceBtn.type = "button";
-    invoiceBtn.addEventListener("click", () => openBehindInvoiceModal(block, invoiceDateValue, invoiceBtn));
+    invoiceBtn.addEventListener("click", () => openBehindInvoiceModal(block, invoiceDateValue, invoiceBtn, invoiceNumberBadge));
     sectionHeader.appendChild(invoiceBtn);
     section.appendChild(sectionHeader);
 

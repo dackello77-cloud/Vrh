@@ -338,9 +338,23 @@ begin
       end if;
 
       eld_count := d.eld_count;
-      -- eld_count = 0 znaci da izvor jos nije azurirao taj dan (placeholder).
-      -- Preskacemo da ne bismo obrisali stvarne podatke nulom.
-      if eld_count is null or eld_count = 0 then
+      if eld_count is null then
+        continue;
+      end if;
+      -- eld_count = 0 moze biti (a) izvor jos nije azurirao taj dan
+      -- (placeholder - vidi 21.8.2026 incident u napomeni kod window_start),
+      -- ili (b) firma je stvarno ugasila poslednji uredjaj i sad realno ima
+      -- 0 (npr. Chunoes Way LLC, 13.9.2026 - viden i u frontend-u kao broj
+      -- koji se "zaglavi" na starom ne-nula totalu zauvek, jer se nula
+      -- nikad ne upise). Izvor je uz to pokazano nepouzdan i unazad - kad
+      -- se uredjaj ugasi, on retroaktivno prepravi eld_count i za dane koji
+      -- vec IMAJU upisanu (tacnu) ne-nula vrednost u truck_counts.
+      -- Zato: dok datum jos ima vremena da se "popravi" u prozoru
+      -- (window_start, 4 dana), 0 se i dalje ignorise kao pre. Tek kad
+      -- datum izlazi iz prozora (ovo je najstariji dan koji ovaj run jos
+      -- gleda) i dalje je 0, prihvatamo ga kao stvarnu nulu i upisujemo -
+      -- inace bi ostao trajno zaglavljen na poslednjoj poznatoj vrednosti.
+      if eld_count = 0 and d.date_key::date > window_start then
         continue;
       end if;
 
@@ -530,9 +544,13 @@ begin
       and (body->'data'->'companies') ? c.external_id
   loop
     eld_count := company_rec.eld_count;
-    if eld_count is null or eld_count = 0 then
+    if eld_count is null then
       continue;
     end if;
+    -- Za razliku od collect_eld_sync (koja automatski preskace 0 dok ne
+    -- prodje kroz 4-dnevni prozor - vidi napomenu tamo), ovde se 0 UVEK
+    -- prihvata: ovo je rucna komanda za tacno jedan datum koji operater vec
+    -- zna da je konacan, pa nema potrebe za istom zastitom od placeholdera.
 
     select total into prev_count from truck_counts
     where company_id = company_rec.company_id and date = target_date - 1;

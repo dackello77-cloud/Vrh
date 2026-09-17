@@ -977,6 +977,15 @@ table.naplata-table td.naplata-status-cell {
   width: 24px;
 }
 
+table.naplata-table td.naplata-status-blink {
+  color: var(--red, #dc2626);
+  animation: naplata-blink 1s step-start infinite;
+}
+
+@keyframes naplata-blink {
+  50% { opacity: 0.15; }
+}
+
 table.naplata-table td.naplata-amount {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -1071,6 +1080,18 @@ table.naplata-table td.naplata-comment {
 .badge-neutral {
   background: var(--report-blue-light);
   color: var(--report-blue);
+}
+
+.invoice-number-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--report-blue-light);
+  color: var(--report-blue);
+  white-space: nowrap;
 }
 
 table.naplata-table input[type="checkbox"]:disabled {
