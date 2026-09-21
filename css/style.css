@@ -1072,26 +1072,32 @@ table.naplata-table td.naplata-comment {
   background: #f3f4f6;
 }
 
-.sifrarnik-pass-cell {
+/* Namerno NIJE display:flex direktno na .sifrarnik-pass-cell (na <td>) —
+   to bi izbacilo ćeliju iz normalnog table-cell ponašanja pa se više ne bi
+   automatski istegla na istu visinu kao ostale ćelije u redu (bio je bag:
+   ovo polje je ispadalo niže od suседних). Flex ide na unutrašnji <div>
+   (.sifrarnik-pass-inner), <td> ostaje običan i prati visinu reda kao svi. */
+.sifrarnik-pass-inner {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 28px;
+  min-height: 26px;
 }
 
-/* Fiksna širina + unutrašnji horizontalni skrol umesto da se ćelija/kolona
-   raširi kad se lozinka otkrije — dugačka lozinka ne pomera ostale kolone,
-   vidi se skrolovanjem unutar ove male kutije umesto da se seče (ellipsis
-   bi sakrio deo lozinke). */
 .sifrarnik-pass-mask {
-  display: inline-block;
-  width: 110px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   font-family: ui-monospace, monospace;
   letter-spacing: 1px;
   color: var(--muted);
+}
+
+.sifrarnik-pass-btns {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .sifrarnik-pass-mask.is-revealed {

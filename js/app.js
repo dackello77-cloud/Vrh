@@ -386,6 +386,7 @@ const el = {
   sifrarnikPristup: document.getElementById("sifrarnikPristup"),
   sifrarnikKomentar: document.getElementById("sifrarnikKomentar"),
   sifrarnikNewGrupaBtn: document.getElementById("sifrarnikNewGrupaBtn"),
+  sifrarnikClearGrupaBtn: document.getElementById("sifrarnikClearGrupaBtn"),
   cancelSifrarnikBtn: document.getElementById("cancelSifrarnikBtn"),
 };
 
@@ -7150,16 +7151,18 @@ function renderSifrarnik() {
 
     const passTd = document.createElement("td");
     passTd.className = "sifrarnik-pass-cell";
+    const passInner = el_("div", "sifrarnik-pass-inner");
     const passText = el_("span", "sifrarnik-pass-mask", "••••••••");
-    passTd.appendChild(passText);
+    passInner.appendChild(passText);
     if (editable) {
+      const passBtns = el_("span", "sifrarnik-pass-btns");
       const showBtn = document.createElement("button");
       showBtn.type = "button";
       showBtn.className = "sifrarnik-icon-btn";
       showBtn.innerHTML = SIFRARNIK_ICON_EYE;
       showBtn.title = "Prikaži";
       showBtn.addEventListener("click", () => toggleSifrarnikPassword(row.id, passText, showBtn));
-      passTd.appendChild(showBtn);
+      passBtns.appendChild(showBtn);
 
       const copyBtn = document.createElement("button");
       copyBtn.type = "button";
@@ -7167,8 +7170,10 @@ function renderSifrarnik() {
       copyBtn.innerHTML = SIFRARNIK_ICON_COPY;
       copyBtn.title = "Kopiraj lozinku";
       copyBtn.addEventListener("click", () => copySifrarnikPassword(row.id, passText));
-      passTd.appendChild(copyBtn);
+      passBtns.appendChild(copyBtn);
+      passInner.appendChild(passBtns);
     }
+    passTd.appendChild(passInner);
     tr.appendChild(passTd);
 
     const linkTd = document.createElement("td");
@@ -7288,6 +7293,10 @@ el.sifrarnikNewGrupaBtn.addEventListener("click", async () => {
   state.sifrarnikGrupe.push(data);
   state.sifrarnikGrupe.sort((a, b) => a.naziv.localeCompare(b.naziv));
   populateSifrarnikGrupaSelect(data.id);
+});
+
+el.sifrarnikClearGrupaBtn.addEventListener("click", () => {
+  el.sifrarnikGrupa.value = "";
 });
 
 function openSifrarnikModal(row) {
