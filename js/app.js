@@ -2063,7 +2063,7 @@ async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
   if (!invoice.company_id) return true;
   const { data: rows, error: selErr } = await supabase
     .from("naplata")
-    .select("id, invoice_number, collected, collection_date")
+    .select("id, invoice_number, collected, collection_date, closed")
     .eq("company_id", invoice.company_id)
     .eq("invoice_date", invoice.invoice_date)
     .eq("cycle", cycle);
@@ -2112,6 +2112,12 @@ async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
     // prati tu izmenu.
     if (row.invoice_number !== String(invoice.invoice_number)) patch.invoice_number = String(invoice.invoice_number);
     if (!row.collection_date) patch.collection_date = nextThursdayDateStr();
+    // "Napravi fakturu"/"Sačuvaj broj" znači da je upravo napravljena sveža
+    // faktura za ovaj dan/firmu/ciklus — naplata stavka mora biti aktivna,
+    // ne sme ostati zaglavljena "Zatvoreno" od neke ranije (sad zastarele)
+    // odluke, jer bi inače bila nevidljiva u Naplata > Aktivan iako upravo
+    // ima svežu fakturu koju treba naplatiti.
+    if (row.closed) patch.closed = false;
     if (Object.keys(patch).length === 0) continue;
     patch.updated_at = new Date().toISOString();
 
