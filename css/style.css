@@ -1186,15 +1186,29 @@ table.naplata-table td.naplata-comment {
   text-overflow: ellipsis;
 }
 
-/* Naslovni red iznad svake grupe u tabeli — vizuelno grupiše redove sa istom
-   "Grupa" jedne odmah iza drugih, umesto da se oslanjamo samo na tekst u
-   koloni da se to primeti u prolazu. */
+/* Naslovni red iznad svake grupe u tabeli — klikabilan (▸/▾), sklapa/otvara
+   šifre te grupe. Zatvorene po defaultu (state.expandedSifrarnikGroups),
+   isti vizuelni obrazac kao Naplata > Zatvoreno i Porudžbine (naplata-month-*). */
 .sifrarnik-group-row td {
-  background: #efeaf9;
-  color: var(--header-bg);
+  background: var(--header-bg);
+  padding: 0;
+}
+
+.sifrarnik-group-btn {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--header-text);
+  font: inherit;
   font-weight: 700;
   text-align: left;
-  white-space: nowrap;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.sifrarnik-group-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .badge {

@@ -151,6 +151,7 @@ const state = {
   usersLoaded: false,
   sifrarnik: [], // password_encrypted/password_plain se namerno NIKAD ne traže u ovoj listi (vidi loadSifrarnik)
   sifrarnikGrupe: [], // [{id, naziv}] — spisak grupa za dropdown, sql/sifrarnik_grupe.sql
+  expandedSifrarnikGroups: new Set(), // naziv grupe (ili BEZ_GRUPE_LABEL) — koje su otvorene; prazno = sve zatvorene po defaultu
   editingSifrarnikId: null,
 };
 
@@ -7122,30 +7123,58 @@ function renderSifrarnik() {
     return;
   }
 
-  const sorted = [...rows].sort((a, b) => {
-    const ga = grupaNameById.get(a.grupa_id) || "";
-    const gb = grupaNameById.get(b.grupa_id) || "";
-    if (!ga && gb) return 1;
-    if (ga && !gb) return -1;
-    return ga.localeCompare(gb) || (a.ime || "").localeCompare(b.ime || "");
+  // Grupiši po nazivu grupe ("bez grupe" na kraju), abecedno; unutar grupe
+  // po imenu.
+  const groups = new Map(); // groupKey -> { label, isNone, rows: [] }
+  for (const row of rows) {
+    const groupName = grupaNameById.get(row.grupa_id) || null;
+    const key = groupName || BEZ_GRUPE_LABEL;
+    if (!groups.has(key)) groups.set(key, { label: groupName || BEZ_GRUPE_LABEL, isNone: !groupName, rows: [] });
+    groups.get(key).rows.push(row);
+  }
+  const groupKeys = Array.from(groups.keys()).sort((a, b) => {
+    const ga = groups.get(a);
+    const gb = groups.get(b);
+    if (ga.isNone && !gb.isNone) return 1;
+    if (!ga.isNone && gb.isNone) return -1;
+    return a.localeCompare(b);
   });
 
   const editable = canEdit("sifrarnik");
-  let lastGroupKey;
 
-  for (const row of sorted) {
-    const groupName = grupaNameById.get(row.grupa_id) || null;
-    const groupKey = groupName || BEZ_GRUPE_LABEL;
-    if (groupKey !== lastGroupKey) {
-      lastGroupKey = groupKey;
-      const groupTr = document.createElement("tr");
-      groupTr.className = "sifrarnik-group-row";
-      const groupTd = el_("td", null, groupName || BEZ_GRUPE_LABEL);
-      groupTd.colSpan = 7;
-      groupTr.appendChild(groupTd);
-      el.sifrarnikBody.appendChild(groupTr);
-    }
+  for (const key of groupKeys) {
+    const group = groups.get(key);
+    group.rows.sort((a, b) => (a.ime || "").localeCompare(b.ime || ""));
 
+    // Grupe su podrazumevano zatvorene (state.expandedSifrarnikGroups je
+    // prazan skup na startu) — klik na strelicu otvara/zatvara tu grupu.
+    // Dok se pretražuje (q nije prazno), SVE grupe se prinudno prikazuju
+    // otvorene za ovaj prikaz, da rezultat pretrage ne ostane sakriven iza
+    // zatvorene grupe — ne menja trajno zapamćeno stanje sklopljenosti.
+    const expanded = q !== "" || state.expandedSifrarnikGroups.has(key);
+
+    const groupTr = document.createElement("tr");
+    groupTr.className = "sifrarnik-group-row";
+    const groupTd = document.createElement("td");
+    groupTd.colSpan = 7;
+    const groupBtn = el_(
+      "button",
+      "sifrarnik-group-btn",
+      `${expanded ? "▾" : "▸"} ${group.label} (${group.rows.length})`
+    );
+    groupBtn.type = "button";
+    groupBtn.addEventListener("click", () => {
+      if (state.expandedSifrarnikGroups.has(key)) state.expandedSifrarnikGroups.delete(key);
+      else state.expandedSifrarnikGroups.add(key);
+      renderSifrarnik();
+    });
+    groupTd.appendChild(groupBtn);
+    groupTr.appendChild(groupTd);
+    el.sifrarnikBody.appendChild(groupTr);
+
+    if (!expanded) continue;
+
+    for (const row of group.rows) {
     const tr = document.createElement("tr");
     tr.appendChild(el_("td", null, row.ime || ""));
     tr.appendChild(el_("td", null, row.username || ""));
@@ -7211,7 +7240,8 @@ function renderSifrarnik() {
     }
     tr.appendChild(actionsTd);
 
-    el.sifrarnikBody.appendChild(tr);
+      el.sifrarnikBody.appendChild(tr);
+    }
   }
 }
 
