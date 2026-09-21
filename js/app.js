@@ -857,10 +857,12 @@ function renderCompanyRow(company, nDays, todayDay) {
       state.counts[company.id], d, (state.prevMonthTailCounts || {})[company.id]
     );
 
+    const isWeekendDay = isWeekend(state.year, state.month, d);
+
     const tdT = document.createElement("td");
     tdT.className = "sub-cell sub-t";
     if (isToday) tdT.classList.add("today-col");
-    if (isWeekend(state.year, state.month, d)) {
+    if (isWeekendDay) {
       tdT.classList.add("cell-weekend");
       tdT.title = "Vikend — preneto sa petka";
     }
@@ -878,11 +880,20 @@ function renderCompanyRow(company, nDays, todayDay) {
     // carry yesterday's number forward as a placeholder. Na 1. u mesecu
     // "juce" nije u ovoj (novoj) mesecnoj tabeli, nego je poslednji dan
     // prethodnog meseca (state.prevMonthTailCounts).
-    if (isToday && (dayData.total === undefined || dayData.total === null)) {
+    //
+    // Vikend dani dobijaju isti fallback i kad NISU "danas" (npr. gleda se
+    // u ponedeljak unazad na subotu/nedelju): backend (carry_forward_last_
+    // working_day() u sql/sync.sql) treba da upise taj red u 13:05 UTC, ali
+    // ako iz bilo kog razloga taj upis izostane, ćelija ne sme ostati trajno
+    // prazna — subota/nedelja uvek samo preslikavaju petak, pa se ta ista
+    // vrednost prikazuje i na frontu dok se pravi red ne pojavi.
+    if ((isToday || isWeekendDay) && (dayData.total === undefined || dayData.total === null)) {
       if (prevTotal !== undefined && prevTotal !== null) {
         tdT.textContent = fmtCell(prevTotal);
         tdT.classList.add("carried-forward");
-        tdT.title = "Preneto sa juče — čeka ažuriranje u 15h";
+        tdT.title = isWeekendDay
+          ? "Preneto sa petka"
+          : "Preneto sa juče — čeka ažuriranje u 15h";
       }
     } else {
       tdT.textContent = fmtCell(dayData.total);
@@ -7048,24 +7059,26 @@ supabase.auth.onAuthStateChange((event) => {
   }
 });
 
-// ---------- auto-refresh posle 13:02 UTC (kad automatski ELD sync zavrsi) ----------
+// ---------- auto-refresh 13:00-15:00 UTC (dok traje automatski ELD sync + retry) ----------
 // Ako app ostane otvoren preko podneva, korisnik ne treba rucno da radi F5
-// da bi video sveze podatke posle automatskog sync-a (cron u 13:00/13:01
-// UTC, sql/sync.sql) - ova provera na svakih 60s automatski osvezi Pregled
-// kamiona (i trenutno prikazan izvestaj, ako je Izvestaj strana otvorena)
-// tacno jednom, prvi put kad primeti da je proslo 13:02 UTC tog dana.
-let autoRefreshDoneForUtcDate = null;
-
+// da bi video sveze podatke posle automatskog sync-a. Cron (sql/sync.sql)
+// pokusava kickoff/collect u 13:00/13:01 UTC i ponavlja na svakih 5 min do
+// 13:30/13:31 ako prvi pokusaj nije upisao nista (greska ili "tih" 0-redova
+// odgovor), a vikendom/praznikom carry_forward_last_working_day() upisuje
+// tek u 13:05 UTC. Prozor je namerno siri od poslednjeg zakazanog retry-ja
+// (13:30/13:31) - do 15:00 UTC - kao dodatna sigurnost ako se cron poslovi
+// pomere/zakasne ili neko rucno pokrene "Sinhronizuj sada" kasnije. Osvezava
+// se na SVAKI tik (60s) kroz ceo taj prozor, ne samo jednom, da bilo koji
+// pokusaj/retry/carry-forward koji stvarno upise nesto novo odmah automatski
+// izadje na portal, bez cekanja korisnika.
 function checkAutoRefreshAfterSync() {
   if (!el.pageNav || el.pageNav.hidden) return; // jos nije ulogovan
 
   const nowUtc = new Date();
-  const utcDateStr = `${nowUtc.getUTCFullYear()}-${pad(nowUtc.getUTCMonth() + 1)}-${pad(nowUtc.getUTCDate())}`;
-  const pastSyncTime =
-    nowUtc.getUTCHours() > 13 || (nowUtc.getUTCHours() === 13 && nowUtc.getUTCMinutes() >= 2);
+  const totalMin = nowUtc.getUTCHours() * 60 + nowUtc.getUTCMinutes();
+  const inSyncWindow = totalMin >= 13 * 60 && totalMin <= 15 * 60; // 13:00-15:00 UTC
 
-  if (!pastSyncTime || autoRefreshDoneForUtcDate === utcDateStr) return;
-  autoRefreshDoneForUtcDate = utcDateStr;
+  if (!inSyncWindow) return;
 
   refreshAll();
   if (el.pageReports && !el.pageReports.hidden) runReport();
