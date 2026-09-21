@@ -25,11 +25,14 @@ revoke all on sifrarnik_grupe from anon;
 grant select, insert, update, delete on sifrarnik_grupe to authenticated;
 
 -- ---------- migracija: sifrarnik.grupa (tekst) -> sifrarnik.grupa_id (FK) ----------
--- "on delete set null" umesto podrazumevanog RESTRICT — ako se grupa ikad
--- ručno obriše u SQL Editor-u, šifre koje su je koristile samo ostanu bez
--- grupe umesto da blokiraju brisanje.
+-- Bez "on delete set null" — podrazumevano (RESTRICT/NO ACTION) namerno:
+-- brisanje grupe koja je još dodeljena bar jednoj šifri mora da bude
+-- ZABRANJENO na nivou baze (dodatna zaštita uz proveru na frontend-u u
+-- js/app.js, koja korisniku odmah jasno kaže zašto pre nego što uopšte
+-- pokuša brisanje - videti sql/sifrarnik_grupe_fix_protect.sql za baze gde
+-- je ovaj fajl već ranije pokrenut sa starim "on delete set null").
 
-alter table sifrarnik add column if not exists grupa_id uuid references sifrarnik_grupe(id) on delete set null;
+alter table sifrarnik add column if not exists grupa_id uuid references sifrarnik_grupe(id);
 
 -- Napravi grupu za svaku postojeću različitu vrednost teksta koja još nema par.
 insert into sifrarnik_grupe (naziv)

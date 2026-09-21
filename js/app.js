@@ -7330,9 +7330,11 @@ el.sifrarnikClearGrupaBtn.addEventListener("click", () => {
   el.sifrarnikGrupa.value = "";
 });
 
-// Trajno briše grupu iz spiska (ne samo sa trenutne šifre) — šifre koje su
-// je koristile ostaju, samo bez grupe (grupa_id se postavlja na null,
-// "on delete set null" u sql/sifrarnik_grupe.sql).
+// Trajno briše grupu iz spiska — ZABRANJENO ako je grupa još uvek dodeljena
+// bilo kojoj šifri (zaštita od slučajnog brisanja grupe koja se koristi;
+// baza ima istu zaštitu kao dodatna sigurnost, vidi sql/sifrarnik_grupe_fix_protect.sql).
+// Prvo treba tim šiframa promeniti grupu (ili ih obrisati), pa tek onda
+// grupu iz spiska.
 el.sifrarnikDeleteGrupaBtn.addEventListener("click", async () => {
   const id = el.sifrarnikGrupa.value;
   if (!id) {
@@ -7341,9 +7343,17 @@ el.sifrarnikDeleteGrupaBtn.addEventListener("click", async () => {
   }
   const grupa = state.sifrarnikGrupe.find((g) => g.id === id);
   if (!grupa) return;
-  if (!confirm(`Obriši grupu "${grupa.naziv}" iz spiska? Šifre koje su je koristile ostaju, samo bez grupe.`)) {
+
+  const usedCount = state.sifrarnik.filter((s) => s.grupa_id === id).length;
+  if (usedCount > 0) {
+    showToast(
+      `Grupa "${grupa.naziv}" se koristi u ${usedCount} ${usedCount === 1 ? "šifri" : "šifara"} — prvo im promeni grupu, pa tek onda obriši grupu.`,
+      true
+    );
     return;
   }
+
+  if (!confirm(`Obriši grupu "${grupa.naziv}" iz spiska?`)) return;
 
   const { error } = await supabase.from("sifrarnik_grupe").delete().eq("id", id);
   if (error) {
