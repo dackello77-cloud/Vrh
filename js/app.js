@@ -2110,6 +2110,7 @@ async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
     const { error: updErr } = await supabase.from("naplata").update(patch).eq("id", row.id);
     if (updErr) {
       console.error(updErr);
+      showToast("Faktura sačuvana, ali upis u Naplatu nije uspeo: " + updErr.message, true);
       continue;
     }
     const localRow = state.naplata.find((r) => r.id === row.id);
