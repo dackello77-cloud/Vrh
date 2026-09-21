@@ -1637,6 +1637,15 @@ function naplataIsIncomplete(row) {
   return row.collected === true && !row.collection_date;
 }
 
+// "Zatvoreno" je stroži uslov od gornjeg (naplataIsIncomplete, koji važi za
+// "Sve markirano") — sme se čekirati samo kad je novac STVARNO naplaćen
+// (collected === true, ne samo "Ne" ili nerešeno) I kad je način naplate
+// izabran. Dok je na "Ne" (ili nerešeno), checkbox ostaje zaključan — tek
+// klik na "Da" (i izbor načina naplate) ga otključava.
+function naplataCanClose(row) {
+  return row.collected === true && !!row.payment_method;
+}
+
 // HEHO CORPORATION, North Shore Freight i Brunex Corporation postoje kao
 // više odvojenih redova u companies (svaki sa svojim ELD external_id, za
 // posebnu flotu) — ali su za Naplatu ista firma i treba da se grupišu
@@ -1765,12 +1774,18 @@ function buildNaplataRow(row, indented = false) {
   allCheckTd.appendChild(allCheckInput);
   tr.appendChild(allCheckTd);
 
+  const canClose = naplataCanClose(row);
+  const closedBlockedReason =
+    row.collected !== true
+      ? "Naplaćeno mora biti \"Da\" pre nego što možeš da zatvoriš ovo"
+      : "Izaberi način naplate pre nego što možeš da zatvoriš ovo";
+
   const closedTd = document.createElement("td");
   const closedInput = document.createElement("input");
   closedInput.type = "checkbox";
   closedInput.checked = !!row.closed;
-  closedInput.disabled = incomplete || !naplataEditable;
-  closedInput.title = incomplete ? incompleteReason : "";
+  closedInput.disabled = (!canClose && !row.closed) || !naplataEditable;
+  closedInput.title = !canClose && !row.closed ? closedBlockedReason : "";
   closedInput.addEventListener("change", () => handleClosedToggle(row, closedInput));
   closedTd.appendChild(closedInput);
   tr.appendChild(closedTd);
@@ -2114,6 +2129,22 @@ el.naplataTabClosed.addEventListener("click", () => {
 
 // ---------- naplata: modal (izmena postojeće ili nova ručna stavka) ----------
 
+// "Način naplate" je select sa fiksnim spiskom (5 stvarnih načina iz
+// istorije, videti index.html) — starije stavke (uvoz iz Excela, ili unete
+// dok je ovo polje još bilo slobodan tekst) mogu imati vrednost koja NIJE u
+// tom spisku. Bez ovoga bi select tiho prikazao prazno "—" umesto stvarne
+// vrednosti, pa bi Sačuvaj nenamerno obrisao taj podatak. Dodaje privremenu
+// opciju za tu vrednost (očisti je se pre svakog sledećeg otvaranja modala).
+function setNaplataPaymentMethodSelect(value) {
+  el.naplataPaymentMethod.querySelectorAll("option.naplata-payment-method-extra").forEach((o) => o.remove());
+  if (value && !Array.from(el.naplataPaymentMethod.options).some((o) => o.value === value)) {
+    const opt = new Option(value, value);
+    opt.className = "naplata-payment-method-extra";
+    el.naplataPaymentMethod.appendChild(opt);
+  }
+  el.naplataPaymentMethod.value = value || "";
+}
+
 function openNaplataModal(mode, row) {
   state.naplataModalMode = mode;
   state.editingNaplataId = row ? row.id : null;
@@ -2133,7 +2164,7 @@ function openNaplataModal(mode, row) {
     el.naplataCycle.value = "behind";
     el.naplataAmount.value = "";
     el.naplataInvoiceNumber.value = "";
-    el.naplataPaymentMethod.value = "";
+    setNaplataPaymentMethodSelect("");
     el.naplataCollected.value = "";
     el.naplataCollectionDate.value = "";
     el.naplataComment.value = "";
@@ -2144,7 +2175,7 @@ function openNaplataModal(mode, row) {
     el.naplataCycle.value = row.cycle;
     el.naplataAmount.value = row.amount;
     el.naplataInvoiceNumber.value = row.invoice_number || "";
-    el.naplataPaymentMethod.value = row.payment_method || "";
+    setNaplataPaymentMethodSelect(row.payment_method || "");
     el.naplataCollected.value = row.collected === true ? "yes" : row.collected === false ? "no" : "";
     el.naplataCollectionDate.value = row.collection_date || "";
     el.naplataComment.value = row.comment || "";
