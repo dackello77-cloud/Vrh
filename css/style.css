@@ -1076,13 +1076,53 @@ table.naplata-table td.naplata-comment {
   display: flex;
   align-items: center;
   gap: 6px;
-  white-space: nowrap;
+  height: 28px;
 }
 
+/* Fiksna širina + unutrašnji horizontalni skrol umesto da se ćelija/kolona
+   raširi kad se lozinka otkrije — dugačka lozinka ne pomera ostale kolone,
+   vidi se skrolovanjem unutar ove male kutije umesto da se seče (ellipsis
+   bi sakrio deo lozinke). */
 .sifrarnik-pass-mask {
+  display: inline-block;
+  width: 110px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
   font-family: ui-monospace, monospace;
   letter-spacing: 1px;
   color: var(--muted);
+}
+
+.sifrarnik-pass-mask.is-revealed {
+  color: var(--text);
+  letter-spacing: normal;
+}
+
+.sifrarnik-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.sifrarnik-icon-btn:hover {
+  background: #f3f4f6;
+  color: var(--text);
+}
+
+.sifrarnik-icon-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .sifrarnik-grupa-row {

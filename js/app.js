@@ -7082,6 +7082,16 @@ async function loadSifrarnikGrupe() {
 
 const BEZ_GRUPE_LABEL = "(bez grupe)";
 
+// Ručno iscrtane SVG ikonice (bez emoji-ja — različito/nejednako izgledaju
+// po platformama) za dugmad u koloni Password. Statičan, fiksan sadržaj
+// (nema korisničkog unosa), pa je innerHTML ovde bezbedan.
+const SIFRARNIK_ICON_EYE =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const SIFRARNIK_ICON_EYE_OFF =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.9 21.9 0 0 1 5.06-5.94M9.9 4.24A10.4 10.4 0 0 1 12 5c7 0 11 7 11 7a21.9 21.9 0 0 1-2.16 3.19M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+const SIFRARNIK_ICON_COPY =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
 // Redovi iste grupe jedni ispod drugih (naslovni red grupe iznad svakog
 // bloka - vidi CSS .sifrarnik-group-row), grupe abecedno, "bez grupe" na
 // kraju. Unutar grupe sortirano po imenu (isto kao pri učitavanju).
@@ -7145,16 +7155,16 @@ function renderSifrarnik() {
     if (editable) {
       const showBtn = document.createElement("button");
       showBtn.type = "button";
-      showBtn.className = "icon-btn";
-      showBtn.textContent = "👁";
+      showBtn.className = "sifrarnik-icon-btn";
+      showBtn.innerHTML = SIFRARNIK_ICON_EYE;
       showBtn.title = "Prikaži";
       showBtn.addEventListener("click", () => toggleSifrarnikPassword(row.id, passText, showBtn));
       passTd.appendChild(showBtn);
 
       const copyBtn = document.createElement("button");
       copyBtn.type = "button";
-      copyBtn.className = "icon-btn";
-      copyBtn.textContent = "📋";
+      copyBtn.className = "sifrarnik-icon-btn";
+      copyBtn.innerHTML = SIFRARNIK_ICON_COPY;
       copyBtn.title = "Kopiraj lozinku";
       copyBtn.addEventListener("click", () => copySifrarnikPassword(row.id, passText));
       passTd.appendChild(copyBtn);
@@ -7207,8 +7217,9 @@ el.sifrarnikSearch.addEventListener("input", renderSifrarnik);
 async function toggleSifrarnikPassword(id, textEl, btnEl) {
   if (textEl.dataset.revealed === "1") {
     textEl.textContent = "••••••••";
+    textEl.classList.remove("is-revealed");
     textEl.dataset.revealed = "0";
-    btnEl.textContent = "👁";
+    btnEl.innerHTML = SIFRARNIK_ICON_EYE;
     btnEl.title = "Prikaži";
     return;
   }
@@ -7218,8 +7229,9 @@ async function toggleSifrarnikPassword(id, textEl, btnEl) {
     return;
   }
   textEl.textContent = data || "(nema lozinke)";
+  textEl.classList.add("is-revealed");
   textEl.dataset.revealed = "1";
-  btnEl.textContent = "🙈";
+  btnEl.innerHTML = SIFRARNIK_ICON_EYE_OFF;
   btnEl.title = "Sakrij";
 }
 
