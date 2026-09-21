@@ -158,8 +158,8 @@ body {
    min-width: 641px da ne dira postojeci uzi .modal na mobilnom (gde bi
    prelamanje naziva i dalje bilo bolje od horizontalnog skrolovanja). */
 @media (min-width: 641px) {
-  .modal-role {
-    width: 480px;
+  .modal.modal-role {
+    width: 560px;
   }
   .modal-role .role-perm-row label {
     white-space: nowrap;
