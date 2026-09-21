@@ -152,6 +152,20 @@ body {
   font-size: 13px;
 }
 
+/* Sira forma na desktopu, samo za "Nova/Izmena rola" - nazivi stranica kao
+   "Pregled uređaja"/"Stanje uređaja" tako staju u jedan red umesto da
+   prelamaju u dva, pa svi redovi u mrezi ostaju iste visine. Ogranicena na
+   min-width: 641px da ne dira postojeci uzi .modal na mobilnom (gde bi
+   prelamanje naziva i dalje bilo bolje od horizontalnog skrolovanja). */
+@media (min-width: 641px) {
+  .modal-role {
+    width: 480px;
+  }
+  .modal-role .role-perm-row label {
+    white-space: nowrap;
+  }
+}
+
 .role-perm-badges {
   display: flex;
   flex-wrap: wrap;
@@ -2249,6 +2263,14 @@ button.home-tile-btn {
 @media (max-width: 640px) {
   .page-nav-btn:not(#navHome) {
     display: none;
+  }
+
+  /* Nova/Izmena rola: 2 kolone (role-perms-grid) na uskom ekranu ne mogu da
+     se sazmu ispod min-content sirine labele+select-a, pa je cela mreza
+     (i modal oko nje) bez ovoga bila sira od ekrana i sekla se sa desne
+     strane. Jedna kolona resava to - svaka stranica ispod prethodne. */
+  .role-perms-grid {
+    grid-template-columns: 1fr;
   }
 
   .home-desktop-only {
