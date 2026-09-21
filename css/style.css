@@ -1133,6 +1133,15 @@ table.naplata-table td.naplata-comment {
   color: var(--text);
 }
 
+/* Destruktivne akcije (obriši grupu iz spiska) — crvena boja na hover, da se
+   jasno razlikuje od ✕ (koje samo uklanja grupu sa TE jedne šifre, ne briše
+   je iz spiska). */
+.sifrarnik-icon-btn-danger:hover {
+  background: #fdeaea;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .sifrarnik-icon-btn svg {
   width: 14px;
   height: 14px;
@@ -1160,10 +1169,13 @@ table.naplata-table td.naplata-comment {
 }
 #sifrarnikTable th:nth-child(1), #sifrarnikTable td:nth-child(1) { width: 140px; }
 #sifrarnikTable th:nth-child(2), #sifrarnikTable td:nth-child(2) { width: 160px; }
-#sifrarnikTable th:nth-child(3), #sifrarnikTable td:nth-child(3) { width: 220px; }
-#sifrarnikTable th:nth-child(4), #sifrarnikTable td:nth-child(4) { width: 150px; }
-#sifrarnikTable th:nth-child(5), #sifrarnikTable td:nth-child(5) { width: 110px; }
+#sifrarnikTable th:nth-child(3), #sifrarnikTable td:nth-child(3) { width: 370px; }
+#sifrarnikTable th:nth-child(4), #sifrarnikTable td:nth-child(4) { width: 300px; }
+#sifrarnikTable th:nth-child(5), #sifrarnikTable td:nth-child(5) { width: 260px; }
 #sifrarnikTable th:nth-child(7), #sifrarnikTable td:nth-child(7) { width: 68px; }
+/* Komentar (6.) namerno bez zadate širine - uzima sav preostali prostor,
+   pa se automatski smanjuje tačno za onoliko koliko su gornje tri kolone
+   uvećane (150+150+150 = 450px), bez posebnog pravila. */
 
 #sifrarnikTable td:nth-child(1),
 #sifrarnikTable td:nth-child(2),
