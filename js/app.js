@@ -1626,10 +1626,15 @@ async function loadNaplata() {
 
 // A row can't be closed/all-checked until someone has actually looked at
 // it: a naplaćeno decision made (true or false — null means "not decided
-// yet") and a collection date entered. Broj računa nije uslov — stare
-// stavke (pre fakturisanja kroz app) često ga nemaju.
+// yet"). Datum naplate je obavezan SAMO kad je naplaćeno stvarno "Da" (datum
+// kad je novac stigao) — "Ne" stavka (novac nije ni stigao, npr. otpisan
+// dug) nema šta da čeka i sme odmah da se čekira/zatvori bez datuma. Ranije
+// je datum bio uslov i za "Ne", pa se takva stavka nikad nije mogla zatvoriti
+// bez unošenja proizvoljnog datuma. Broj računa nije uslov — stare stavke
+// (pre fakturisanja kroz app) često ga nemaju.
 function naplataIsIncomplete(row) {
-  return row.collected === null || row.collected === undefined || !row.collection_date;
+  if (row.collected === null || row.collected === undefined) return true;
+  return row.collected === true && !row.collection_date;
 }
 
 // HEHO CORPORATION, North Shore Freight i Brunex Corporation postoje kao
@@ -1745,12 +1750,17 @@ function buildNaplataRow(row, indented = false) {
 
   tr.appendChild(el_("td", "naplata-comment", row.comment || ""));
 
+  const incompleteReason =
+    row.collected === null || row.collected === undefined
+      ? "Postavi naplaćeno (Da/Ne) pre nego što možeš da čekiraš ovo"
+      : "Postavi datum naplate pre nego što možeš da čekiraš ovo";
+
   const allCheckTd = document.createElement("td");
   const allCheckInput = document.createElement("input");
   allCheckInput.type = "checkbox";
   allCheckInput.checked = !!row.all_checked;
   allCheckInput.disabled = incomplete || !naplataEditable;
-  allCheckInput.title = incomplete ? "Postavi naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
+  allCheckInput.title = incomplete ? incompleteReason : "";
   allCheckInput.addEventListener("change", () => updateNaplataField(row.id, "all_checked", allCheckInput.checked));
   allCheckTd.appendChild(allCheckInput);
   tr.appendChild(allCheckTd);
@@ -1760,7 +1770,7 @@ function buildNaplataRow(row, indented = false) {
   closedInput.type = "checkbox";
   closedInput.checked = !!row.closed;
   closedInput.disabled = incomplete || !naplataEditable;
-  closedInput.title = incomplete ? "Postavi naplaćeno i datum naplate pre nego što možeš da čekiraš ovo" : "";
+  closedInput.title = incomplete ? incompleteReason : "";
   closedInput.addEventListener("change", () => handleClosedToggle(row, closedInput));
   closedTd.appendChild(closedInput);
   tr.appendChild(closedTd);
