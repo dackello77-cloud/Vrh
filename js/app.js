@@ -2053,8 +2053,14 @@ function nextThursdayDateStr(fromDate = now) {
   return dateStr(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+// Vraća true/false (uspeh/neuspeh) — pozivaoci (saveInvoiceNumberBtn/
+// sendInvoiceBtn i Behind ekvivalenti) MORAJU proveriti ovo pre nego što
+// prikažu svoj "Sačuvano" toast: ako se prikaže odmah posle greške ovde,
+// taj drugi toast prepiše (zameni) prvi - showToast je singleton element,
+// pa se vidi samo poslednji poziv. Bez ovog povratnog signala greška bi
+// bila nevidljiva čak i uz sopstveni showToast poziv ispod.
 async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
-  if (!invoice.company_id) return;
+  if (!invoice.company_id) return true;
   const { data: rows, error: selErr } = await supabase
     .from("naplata")
     .select("id, invoice_number, collected, collection_date")
@@ -2063,7 +2069,8 @@ async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
     .eq("cycle", cycle);
   if (selErr) {
     console.error(selErr);
-    return;
+    showToast("Faktura sačuvana, ali upis u Naplatu nije uspeo: " + selErr.message, true);
+    return false;
   }
 
   // Nema još naplata reda za ovaj dan/firmu/ciklus (auto-sync ga za Current
@@ -2087,14 +2094,15 @@ async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
       .single();
     if (insErr) {
       console.error(insErr);
-      showToast("Greška pri upisu u Naplatu: " + insErr.message, true);
-      return;
+      showToast("Faktura sačuvana, ali upis u Naplatu nije uspeo: " + insErr.message, true);
+      return false;
     }
     state.naplata.push(created);
     if (state.naplataLoaded) renderNaplata();
-    return;
+    return true;
   }
 
+  let ok = true;
   for (const row of rows) {
     const patch = {};
     if (row.collected === null || row.collected === undefined) patch.collected = false;
@@ -2111,12 +2119,14 @@ async function applyInvoiceSentToNaplata(invoice, cycle, companyName) {
     if (updErr) {
       console.error(updErr);
       showToast("Faktura sačuvana, ali upis u Naplatu nije uspeo: " + updErr.message, true);
+      ok = false;
       continue;
     }
     const localRow = state.naplata.find((r) => r.id === row.id);
     if (localRow) Object.assign(localRow, patch);
   }
   if (state.naplataLoaded) renderNaplata();
+  return ok;
 }
 
 el.naplataTabActive.addEventListener("click", () => {
@@ -3258,7 +3268,7 @@ el.saveInvoiceNumberBtn.addEventListener("click", async () => {
       state.currentInvoice = updated;
     }
 
-    await applyInvoiceSentToNaplata(invoice, "current", state.currentInvoiceCompany?.name);
+    const naplataOk = await applyInvoiceSentToNaplata(invoice, "current", state.currentInvoiceCompany?.name);
     if (state.currentInvoiceButton) {
       state.currentInvoiceButton.textContent = "Vidi fakturu";
       state.currentInvoiceButton.classList.add("invoice-report-btn-sent");
@@ -3267,7 +3277,8 @@ el.saveInvoiceNumberBtn.addEventListener("click", async () => {
       state.currentInvoiceNumberBadge.textContent = `#${invoice.invoice_number}`;
       state.currentInvoiceNumberBadge.hidden = false;
     }
-    showToast("Broj računa sačuvan");
+    // Ne prepisuj toast sa greškom (već prikazan unutar applyInvoiceSentToNaplata) svojim "uspeh" tekstom.
+    if (naplataOk) showToast("Broj računa sačuvan");
     closeInvoiceModal();
   } finally {
     el.saveInvoiceNumberBtn.disabled = false;
@@ -3327,7 +3338,7 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
 
     invoice.sent_to = to;
     invoice.sent_at = sentAt;
-    await applyInvoiceSentToNaplata(invoice, "current", state.currentInvoiceCompany?.name);
+    const naplataOk = await applyInvoiceSentToNaplata(invoice, "current", state.currentInvoiceCompany?.name);
     if (state.currentInvoiceButton) {
       state.currentInvoiceButton.textContent = "Vidi fakturu";
       state.currentInvoiceButton.classList.add("invoice-report-btn-sent");
@@ -3336,7 +3347,7 @@ el.sendInvoiceBtn.addEventListener("click", async () => {
       state.currentInvoiceNumberBadge.textContent = `#${invoice.invoice_number}`;
       state.currentInvoiceNumberBadge.hidden = false;
     }
-    showToast(`Faktura poslata na ${to}`);
+    if (naplataOk) showToast(`Faktura poslata na ${to}`);
     closeInvoiceModal();
   } catch (error) {
     showToast("Greška pri slanju: " + error.message, true);
@@ -3652,7 +3663,7 @@ el.saveBehindInvoiceBtn.addEventListener("click", async () => {
 
     // Faktura ulazi u Naplatu čim je sačuvana, ne tek kad se pošalje na
     // email — slanje emaila je sad odvojen, opcioni korak.
-    await applyInvoiceSentToNaplata(state.manualInvoice, "behind", state.manualInvoiceCompany?.name);
+    const naplataOk = await applyInvoiceSentToNaplata(state.manualInvoice, "behind", state.manualInvoiceCompany?.name);
     if (state.manualInvoiceButton) {
       state.manualInvoiceButton.textContent = "Vidi fakturu";
       state.manualInvoiceButton.classList.add("invoice-report-btn-sent");
@@ -3661,7 +3672,7 @@ el.saveBehindInvoiceBtn.addEventListener("click", async () => {
       state.manualInvoiceNumberBadge.textContent = `#${state.manualInvoice.invoice_number}`;
       state.manualInvoiceNumberBadge.hidden = false;
     }
-    showToast("Faktura sačuvana");
+    if (naplataOk) showToast("Faktura sačuvana");
     closeBehindInvoiceModal();
   } catch (error) {
     showToast("Greška pri čuvanju: " + error.message, true);
@@ -3719,7 +3730,7 @@ el.sendBehindInvoiceBtn.addEventListener("click", async () => {
 
     invoice.sent_to = to;
     invoice.sent_at = sentAt;
-    await applyInvoiceSentToNaplata(invoice, "behind", company?.name);
+    const naplataOk = await applyInvoiceSentToNaplata(invoice, "behind", company?.name);
     if (state.manualInvoiceButton) {
       state.manualInvoiceButton.textContent = "Vidi fakturu";
       state.manualInvoiceButton.classList.add("invoice-report-btn-sent");
@@ -3728,7 +3739,7 @@ el.sendBehindInvoiceBtn.addEventListener("click", async () => {
       state.manualInvoiceNumberBadge.textContent = `#${invoice.invoice_number}`;
       state.manualInvoiceNumberBadge.hidden = false;
     }
-    showToast(`Faktura poslata na ${to}`);
+    if (naplataOk) showToast(`Faktura poslata na ${to}`);
     closeBehindInvoiceModal();
   } catch (error) {
     showToast("Greška pri slanju: " + error.message, true);
