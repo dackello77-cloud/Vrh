@@ -1085,6 +1085,26 @@ table.naplata-table td.naplata-comment {
   color: var(--muted);
 }
 
+.sifrarnik-grupa-row {
+  display: flex;
+  gap: 6px;
+}
+
+.sifrarnik-grupa-row select {
+  flex: 1;
+}
+
+/* Naslovni red iznad svake grupe u tabeli — vizuelno grupiše redove sa istom
+   "Grupa" jedne odmah iza drugih, umesto da se oslanjamo samo na tekst u
+   koloni da se to primeti u prolazu. */
+.sifrarnik-group-row td {
+  background: #efeaf9;
+  color: var(--header-bg);
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+}
+
 .badge {
   display: inline-block;
   padding: 2px 8px;

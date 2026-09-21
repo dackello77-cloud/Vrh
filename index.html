@@ -484,7 +484,6 @@
       <table id="sifrarnikTable" class="grid">
         <thead>
           <tr>
-            <th>Grupa</th>
             <th>Ime</th>
             <th>Username</th>
             <th>Password</th>
@@ -506,7 +505,10 @@
       <form id="sifrarnikForm">
         <label>
           Grupa
-          <input type="text" id="sifrarnikGrupa" placeholder="npr. VRH, RST..." />
+          <div class="sifrarnik-grupa-row">
+            <select id="sifrarnikGrupa"></select>
+            <button type="button" id="sifrarnikNewGrupaBtn" class="btn" title="Dodaj novu grupu">+ Nova</button>
+          </div>
         </label>
         <label>
           Ime (na šta se odnosi)

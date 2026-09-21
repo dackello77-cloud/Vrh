@@ -150,6 +150,7 @@ const state = {
   users: [], // profiles redovi (email + role_id) — samo za korisnike sa settings edit dozvolom
   usersLoaded: false,
   sifrarnik: [], // password_encrypted/password_plain se namerno NIKAD ne traže u ovoj listi (vidi loadSifrarnik)
+  sifrarnikGrupe: [], // [{id, naziv}] — spisak grupa za dropdown, sql/sifrarnik_grupe.sql
   editingSifrarnikId: null,
 };
 
@@ -384,6 +385,7 @@ const el = {
   sifrarnikLink: document.getElementById("sifrarnikLink"),
   sifrarnikPristup: document.getElementById("sifrarnikPristup"),
   sifrarnikKomentar: document.getElementById("sifrarnikKomentar"),
+  sifrarnikNewGrupaBtn: document.getElementById("sifrarnikNewGrupaBtn"),
   cancelSifrarnikBtn: document.getElementById("cancelSifrarnikBtn"),
 };
 
@@ -1559,7 +1561,7 @@ function showPage(page) {
   }
   if (page === "sifrarnik") {
     hideIfNoEdit("sifrarnik", el.sifrarnikAddBtn);
-    loadSifrarnik().then(renderSifrarnik);
+    Promise.all([loadSifrarnik(), loadSifrarnikGrupe()]).then(renderSifrarnik);
   }
   if (page === "settings" && !state.productsLoaded) {
     loadProducts().then(renderSettingsProducts);
@@ -7058,8 +7060,7 @@ el.logoutBtn.addEventListener("click", async () => {
 async function loadSifrarnik() {
   const { data, error } = await supabase
     .from("sifrarnik")
-    .select("id,grupa,ime,username,link,pristup,komentar")
-    .order("grupa", { ascending: true })
+    .select("id,grupa_id,ime,username,link,pristup,komentar")
     .order("ime", { ascending: true });
   if (error) {
     showToast("Greška pri učitavanju šifrarnika: " + error.message, true);
@@ -7069,12 +7070,30 @@ async function loadSifrarnik() {
   state.sifrarnik = data || [];
 }
 
+async function loadSifrarnikGrupe() {
+  const { data, error } = await supabase.from("sifrarnik_grupe").select("id,naziv").order("naziv");
+  if (error) {
+    showToast("Greška pri učitavanju grupa: " + error.message, true);
+    state.sifrarnikGrupe = [];
+    return;
+  }
+  state.sifrarnikGrupe = data || [];
+}
+
+const BEZ_GRUPE_LABEL = "(bez grupe)";
+
+// Redovi iste grupe jedni ispod drugih (naslovni red grupe iznad svakog
+// bloka - vidi CSS .sifrarnik-group-row), grupe abecedno, "bez grupe" na
+// kraju. Unutar grupe sortirano po imenu (isto kao pri učitavanju).
 function renderSifrarnik() {
   el.sifrarnikBody.innerHTML = "";
+  const grupaNameById = new Map(state.sifrarnikGrupe.map((g) => [g.id, g.naziv]));
   const q = (el.sifrarnikSearch.value || "").trim().toLowerCase();
   const rows = q
     ? state.sifrarnik.filter((r) =>
-        [r.grupa, r.ime, r.username, r.pristup].some((v) => (v || "").toLowerCase().includes(q))
+        [grupaNameById.get(r.grupa_id), r.ime, r.username, r.pristup].some((v) =>
+          (v || "").toLowerCase().includes(q)
+        )
       )
     : state.sifrarnik;
 
@@ -7085,17 +7104,37 @@ function renderSifrarnik() {
       "empty-state-cell",
       state.sifrarnik.length ? "Nema rezultata pretrage." : "Nema unetih šifara."
     );
-    td.colSpan = 8;
+    td.colSpan = 7;
     tr.appendChild(td);
     el.sifrarnikBody.appendChild(tr);
     return;
   }
 
-  const editable = canEdit("sifrarnik");
+  const sorted = [...rows].sort((a, b) => {
+    const ga = grupaNameById.get(a.grupa_id) || "";
+    const gb = grupaNameById.get(b.grupa_id) || "";
+    if (!ga && gb) return 1;
+    if (ga && !gb) return -1;
+    return ga.localeCompare(gb) || (a.ime || "").localeCompare(b.ime || "");
+  });
 
-  for (const row of rows) {
+  const editable = canEdit("sifrarnik");
+  let lastGroupKey;
+
+  for (const row of sorted) {
+    const groupName = grupaNameById.get(row.grupa_id) || null;
+    const groupKey = groupName || BEZ_GRUPE_LABEL;
+    if (groupKey !== lastGroupKey) {
+      lastGroupKey = groupKey;
+      const groupTr = document.createElement("tr");
+      groupTr.className = "sifrarnik-group-row";
+      const groupTd = el_("td", null, groupName || BEZ_GRUPE_LABEL);
+      groupTd.colSpan = 7;
+      groupTr.appendChild(groupTd);
+      el.sifrarnikBody.appendChild(groupTr);
+    }
+
     const tr = document.createElement("tr");
-    tr.appendChild(el_("td", null, row.grupa || ""));
     tr.appendChild(el_("td", null, row.ime || ""));
     tr.appendChild(el_("td", null, row.username || ""));
 
@@ -7208,10 +7247,41 @@ async function copySifrarnikPassword(id, textEl) {
   }
 }
 
+function populateSifrarnikGrupaSelect(selectedId) {
+  el.sifrarnikGrupa.innerHTML = "";
+  el.sifrarnikGrupa.appendChild(new Option(BEZ_GRUPE_LABEL, ""));
+  for (const g of state.sifrarnikGrupe) {
+    el.sifrarnikGrupa.appendChild(new Option(g.naziv, g.id));
+  }
+  el.sifrarnikGrupa.value = selectedId || "";
+}
+
+el.sifrarnikNewGrupaBtn.addEventListener("click", async () => {
+  const naziv = window.prompt("Naziv nove grupe:", "");
+  if (naziv === null) return;
+  const trimmed = naziv.trim();
+  if (!trimmed) return;
+
+  const existing = state.sifrarnikGrupe.find((g) => g.naziv.toLowerCase() === trimmed.toLowerCase());
+  if (existing) {
+    populateSifrarnikGrupaSelect(existing.id);
+    return;
+  }
+
+  const { data, error } = await supabase.from("sifrarnik_grupe").insert({ naziv: trimmed }).select().single();
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  state.sifrarnikGrupe.push(data);
+  state.sifrarnikGrupe.sort((a, b) => a.naziv.localeCompare(b.naziv));
+  populateSifrarnikGrupaSelect(data.id);
+});
+
 function openSifrarnikModal(row) {
   state.editingSifrarnikId = row ? row.id : null;
   el.sifrarnikModalTitle.textContent = row ? "Izmena šifre" : "Nova šifra";
-  el.sifrarnikGrupa.value = row?.grupa || "";
+  populateSifrarnikGrupaSelect(row?.grupa_id || "");
   el.sifrarnikIme.value = row?.ime || "";
   el.sifrarnikUsername.value = row?.username || "";
   el.sifrarnikPassword.value = "";
@@ -7244,7 +7314,7 @@ el.sifrarnikForm.addEventListener("submit", async (e) => {
   }
 
   const payload = {
-    grupa: el.sifrarnikGrupa.value.trim() || null,
+    grupa_id: el.sifrarnikGrupa.value || null,
     ime,
     username: el.sifrarnikUsername.value.trim() || null,
     link: el.sifrarnikLink.value.trim() || null,
