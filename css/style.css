@@ -1072,6 +1072,19 @@ table.naplata-table td.naplata-comment {
   background: #f3f4f6;
 }
 
+.sifrarnik-pass-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.sifrarnik-pass-mask {
+  font-family: ui-monospace, monospace;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+
 .badge {
   display: inline-block;
   padding: 2px 8px;

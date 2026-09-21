@@ -24,6 +24,7 @@
     <button id="navNaplata" class="page-nav-btn">Naplata</button>
     <button id="navOrders" class="page-nav-btn">Porudžbine</button>
     <button id="navStock" class="page-nav-btn">Stanje uređaja</button>
+    <button id="navSifrarnik" class="page-nav-btn">Šifrarnik</button>
     <button id="navSettings" class="page-nav-btn">Podešavanja</button>
     <button id="logoutBtn" class="page-nav-btn page-nav-logout">Odjava</button>
   </nav>
@@ -467,6 +468,75 @@
         <button type="button" id="stockModalCloseBtn" class="btn">Zatvori</button>
         <button type="button" id="stockSaveBtn" class="btn btn-primary">Sačuvaj (<span id="stockSaveBtnCount">0</span>)</button>
       </div>
+    </div>
+  </div>
+
+  <div id="pageSifrarnik" hidden>
+    <header class="topbar">
+      <h1>Šifrarnik</h1>
+      <div class="actions">
+        <input type="text" id="sifrarnikSearch" class="search-input" placeholder="Pretraga..." />
+        <button id="sifrarnikAddBtn" class="btn btn-primary">+ Dodaj</button>
+      </div>
+    </header>
+
+    <main class="table-wrap">
+      <table id="sifrarnikTable" class="grid">
+        <thead>
+          <tr>
+            <th>Grupa</th>
+            <th>Ime</th>
+            <th>Username</th>
+            <th>Password</th>
+            <th>Link</th>
+            <th>Pristup</th>
+            <th>Komentar</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="sifrarnikBody"></tbody>
+      </table>
+    </main>
+  </div>
+
+  <!-- Modal: nova/izmena šifra -->
+  <div id="sifrarnikModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2 id="sifrarnikModalTitle">Nova šifra</h2>
+      <form id="sifrarnikForm">
+        <label>
+          Grupa
+          <input type="text" id="sifrarnikGrupa" placeholder="npr. VRH, RST..." />
+        </label>
+        <label>
+          Ime (na šta se odnosi)
+          <input type="text" id="sifrarnikIme" required />
+        </label>
+        <label>
+          Username
+          <input type="text" id="sifrarnikUsername" autocomplete="off" />
+        </label>
+        <label>
+          Password
+          <input type="text" id="sifrarnikPassword" autocomplete="off" />
+        </label>
+        <label>
+          Link
+          <input type="text" id="sifrarnikLink" placeholder="https://..." />
+        </label>
+        <label>
+          Pristup
+          <input type="text" id="sifrarnikPristup" placeholder="npr. Administrator" />
+        </label>
+        <label>
+          Komentar
+          <textarea id="sifrarnikKomentar" rows="2"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="cancelSifrarnikBtn" class="btn">Otkaži</button>
+          <button type="submit" class="btn btn-primary">Sačuvaj</button>
+        </div>
+      </form>
     </div>
   </div>
 

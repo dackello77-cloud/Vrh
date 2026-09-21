@@ -21,7 +21,7 @@ const TEST_INVOICE_EMAIL = "dackello77@gmail.com";
 const START_TIER_PRICE = 25;
 const MANUALLY_VISIBLE_COMPANIES_KEY = "vrhManuallyVisibleCompanyIds";
 const LAST_PAGE_KEY = "vrhLastPage";
-const VALID_PAGES = ["home", "overview", "reports", "naplata", "orders", "stock", "settings"];
+const VALID_PAGES = ["home", "overview", "reports", "naplata", "orders", "stock", "sifrarnik", "settings"];
 const PAGE_LABELS = {
   home: "Početna",
   overview: "Pregled uređaja",
@@ -29,6 +29,7 @@ const PAGE_LABELS = {
   naplata: "Naplata",
   orders: "Porudžbine",
   stock: "Stanje uređaja",
+  sifrarnik: "Šifrarnik",
   settings: "Podešavanja",
 };
 const NAV_BTN_BY_PAGE = {
@@ -38,6 +39,7 @@ const NAV_BTN_BY_PAGE = {
   naplata: "navNaplata",
   orders: "navOrders",
   stock: "navStock",
+  sifrarnik: "navSifrarnik",
   settings: "navSettings",
 };
 
@@ -147,6 +149,8 @@ const state = {
   editingRoleId: null,
   users: [], // profiles redovi (email + role_id) — samo za korisnike sa settings edit dozvolom
   usersLoaded: false,
+  sifrarnik: [], // password_encrypted/password_plain se namerno NIKAD ne traže u ovoj listi (vidi loadSifrarnik)
+  editingSifrarnikId: null,
 };
 
 const el = {
@@ -365,6 +369,22 @@ const el = {
   userModalPassword: document.getElementById("userModalPassword"),
   userModalRole: document.getElementById("userModalRole"),
   userModalCancel: document.getElementById("userModalCancel"),
+  navSifrarnik: document.getElementById("navSifrarnik"),
+  pageSifrarnik: document.getElementById("pageSifrarnik"),
+  sifrarnikSearch: document.getElementById("sifrarnikSearch"),
+  sifrarnikAddBtn: document.getElementById("sifrarnikAddBtn"),
+  sifrarnikBody: document.getElementById("sifrarnikBody"),
+  sifrarnikModal: document.getElementById("sifrarnikModal"),
+  sifrarnikModalTitle: document.getElementById("sifrarnikModalTitle"),
+  sifrarnikForm: document.getElementById("sifrarnikForm"),
+  sifrarnikGrupa: document.getElementById("sifrarnikGrupa"),
+  sifrarnikIme: document.getElementById("sifrarnikIme"),
+  sifrarnikUsername: document.getElementById("sifrarnikUsername"),
+  sifrarnikPassword: document.getElementById("sifrarnikPassword"),
+  sifrarnikLink: document.getElementById("sifrarnikLink"),
+  sifrarnikPristup: document.getElementById("sifrarnikPristup"),
+  sifrarnikKomentar: document.getElementById("sifrarnikKomentar"),
+  cancelSifrarnikBtn: document.getElementById("cancelSifrarnikBtn"),
 };
 
 function pad(n) {
@@ -1494,6 +1514,7 @@ function showPage(page) {
   el.pageNaplata.hidden = page !== "naplata";
   el.pageOrders.hidden = page !== "orders";
   el.pageStock.hidden = page !== "stock";
+  el.pageSifrarnik.hidden = page !== "sifrarnik";
   el.pageSettings.hidden = page !== "settings";
   el.navHome.classList.toggle("is-active", page === "home");
   el.navOverview.classList.toggle("is-active", page === "overview");
@@ -1501,6 +1522,7 @@ function showPage(page) {
   el.navNaplata.classList.toggle("is-active", page === "naplata");
   el.navOrders.classList.toggle("is-active", page === "orders");
   el.navStock.classList.toggle("is-active", page === "stock");
+  el.navSifrarnik.classList.toggle("is-active", page === "sifrarnik");
   el.navSettings.classList.toggle("is-active", page === "settings");
   if (page === "home") {
     loadHomeDashboard();
@@ -1535,6 +1557,10 @@ function showPage(page) {
       renderStockConnectors();
     });
   }
+  if (page === "sifrarnik") {
+    hideIfNoEdit("sifrarnik", el.sifrarnikAddBtn);
+    loadSifrarnik().then(renderSifrarnik);
+  }
   if (page === "settings" && !state.productsLoaded) {
     loadProducts().then(renderSettingsProducts);
   }
@@ -1558,6 +1584,7 @@ el.navReports.addEventListener("click", () => showPage("reports"));
 el.navNaplata.addEventListener("click", () => showPage("naplata"));
 el.navOrders.addEventListener("click", () => showPage("orders"));
 el.navStock.addEventListener("click", () => showPage("stock"));
+el.navSifrarnik.addEventListener("click", () => showPage("sifrarnik"));
 el.navSettings.addEventListener("click", () => showPage("settings"));
 
 // ---------- naplata ----------
@@ -7020,6 +7047,242 @@ el.logoutBtn.addEventListener("click", async () => {
   await supabase.auth.signOut();
   location.reload();
 });
+
+// ---------- šifrarnik ----------
+// Password se čuva šifrovan (sql/sifrarnik.sql) — lista OVDE namerno nikad
+// ne traži password_encrypted (učitava se samo ono što treba za prikaz
+// tabele). Stvarna lozinka se dohvata tek na klik "Prikaži"/"Kopiraj", kroz
+// reveal_sifrarnik_password() RPC koji upisuje ko/kad je otključao koju
+// šifru (sifrarnik_audit_log).
+
+async function loadSifrarnik() {
+  const { data, error } = await supabase
+    .from("sifrarnik")
+    .select("id,grupa,ime,username,link,pristup,komentar")
+    .order("grupa", { ascending: true })
+    .order("ime", { ascending: true });
+  if (error) {
+    showToast("Greška pri učitavanju šifrarnika: " + error.message, true);
+    state.sifrarnik = [];
+    return;
+  }
+  state.sifrarnik = data || [];
+}
+
+function renderSifrarnik() {
+  el.sifrarnikBody.innerHTML = "";
+  const q = (el.sifrarnikSearch.value || "").trim().toLowerCase();
+  const rows = q
+    ? state.sifrarnik.filter((r) =>
+        [r.grupa, r.ime, r.username, r.pristup].some((v) => (v || "").toLowerCase().includes(q))
+      )
+    : state.sifrarnik;
+
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = el_(
+      "td",
+      "empty-state-cell",
+      state.sifrarnik.length ? "Nema rezultata pretrage." : "Nema unetih šifara."
+    );
+    td.colSpan = 8;
+    tr.appendChild(td);
+    el.sifrarnikBody.appendChild(tr);
+    return;
+  }
+
+  const editable = canEdit("sifrarnik");
+
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.appendChild(el_("td", null, row.grupa || ""));
+    tr.appendChild(el_("td", null, row.ime || ""));
+    tr.appendChild(el_("td", null, row.username || ""));
+
+    const passTd = document.createElement("td");
+    passTd.className = "sifrarnik-pass-cell";
+    const passText = el_("span", "sifrarnik-pass-mask", "••••••••");
+    passTd.appendChild(passText);
+    if (editable) {
+      const showBtn = document.createElement("button");
+      showBtn.type = "button";
+      showBtn.className = "icon-btn";
+      showBtn.textContent = "👁";
+      showBtn.title = "Prikaži";
+      showBtn.addEventListener("click", () => toggleSifrarnikPassword(row.id, passText, showBtn));
+      passTd.appendChild(showBtn);
+
+      const copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "icon-btn";
+      copyBtn.textContent = "📋";
+      copyBtn.title = "Kopiraj lozinku";
+      copyBtn.addEventListener("click", () => copySifrarnikPassword(row.id, passText));
+      passTd.appendChild(copyBtn);
+    }
+    tr.appendChild(passTd);
+
+    const linkTd = document.createElement("td");
+    if (row.link) {
+      const a = document.createElement("a");
+      a.href = /^https?:\/\//i.test(row.link) ? row.link : `https://${row.link}`;
+      a.textContent = row.link;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      linkTd.appendChild(a);
+    }
+    tr.appendChild(linkTd);
+
+    tr.appendChild(el_("td", null, row.pristup || ""));
+    tr.appendChild(el_("td", null, row.komentar || ""));
+
+    const actionsTd = document.createElement("td");
+    if (editable) {
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "btn btn-icon";
+      editBtn.textContent = "✎";
+      editBtn.title = "Izmeni";
+      editBtn.addEventListener("click", () => openSifrarnikModal(row));
+      actionsTd.appendChild(editBtn);
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn btn-icon";
+      delBtn.textContent = "🗑";
+      delBtn.title = "Obriši";
+      delBtn.addEventListener("click", () => deleteSifrarnik(row));
+      actionsTd.appendChild(delBtn);
+    }
+    tr.appendChild(actionsTd);
+
+    el.sifrarnikBody.appendChild(tr);
+  }
+}
+
+el.sifrarnikSearch.addEventListener("input", renderSifrarnik);
+
+// Klik ponovo sakriva bez novog RPC poziva (vrednost ostaje u DOM-u dok se
+// strana ne napusti/osveži — isti kompromis kao svaki "prikaži lozinku"
+// obrazac; polje se ionako vidi samo korisnicima sa edit dozvolom).
+async function toggleSifrarnikPassword(id, textEl, btnEl) {
+  if (textEl.dataset.revealed === "1") {
+    textEl.textContent = "••••••••";
+    textEl.dataset.revealed = "0";
+    btnEl.textContent = "👁";
+    btnEl.title = "Prikaži";
+    return;
+  }
+  const { data, error } = await supabase.rpc("reveal_sifrarnik_password", { p_id: id });
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  textEl.textContent = data || "(nema lozinke)";
+  textEl.dataset.revealed = "1";
+  btnEl.textContent = "🙈";
+  btnEl.title = "Sakrij";
+}
+
+// Kopira bez obaveznog prikazivanja na ekranu — može se otključati posebno,
+// ovo radi i dok je maskirano (manje rizika od snimka ekrana/"preko ramena").
+async function copySifrarnikPassword(id, textEl) {
+  let plain = textEl.dataset.revealed === "1" ? textEl.textContent : null;
+  if (!plain) {
+    const { data, error } = await supabase.rpc("reveal_sifrarnik_password", { p_id: id });
+    if (error) {
+      showToast("Greška: " + error.message, true);
+      return;
+    }
+    plain = data;
+  }
+  if (!plain) {
+    showToast("Nema unete lozinke", true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(plain);
+    showToast("Lozinka kopirana");
+  } catch {
+    showToast("Kopiranje nije uspelo — dozvoli pristup clipboard-u", true);
+  }
+}
+
+function openSifrarnikModal(row) {
+  state.editingSifrarnikId = row ? row.id : null;
+  el.sifrarnikModalTitle.textContent = row ? "Izmena šifre" : "Nova šifra";
+  el.sifrarnikGrupa.value = row?.grupa || "";
+  el.sifrarnikIme.value = row?.ime || "";
+  el.sifrarnikUsername.value = row?.username || "";
+  el.sifrarnikPassword.value = "";
+  el.sifrarnikPassword.placeholder = row ? "Ostavi prazno da zadržiš postojeću" : "";
+  el.sifrarnikLink.value = row?.link || "";
+  el.sifrarnikPristup.value = row?.pristup || "";
+  el.sifrarnikKomentar.value = row?.komentar || "";
+  el.sifrarnikModal.hidden = false;
+}
+
+function closeSifrarnikModal() {
+  el.sifrarnikModal.hidden = true;
+  el.sifrarnikForm.reset();
+  state.editingSifrarnikId = null;
+}
+
+el.sifrarnikAddBtn.addEventListener("click", () => openSifrarnikModal(null));
+el.cancelSifrarnikBtn.addEventListener("click", closeSifrarnikModal);
+el.sifrarnikModal.addEventListener("click", (e) => {
+  if (e.target === el.sifrarnikModal) closeSifrarnikModal();
+});
+
+el.sifrarnikForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const ime = el.sifrarnikIme.value.trim();
+  if (!ime) {
+    showToast("Ime je obavezno", true);
+    return;
+  }
+
+  const payload = {
+    grupa: el.sifrarnikGrupa.value.trim() || null,
+    ime,
+    username: el.sifrarnikUsername.value.trim() || null,
+    link: el.sifrarnikLink.value.trim() || null,
+    pristup: el.sifrarnikPristup.value.trim() || null,
+    komentar: el.sifrarnikKomentar.value.trim() || null,
+  };
+  // Prazno = zadrži postojeću lozinku (vidi sifrarnik_encrypt_password()
+  // trigger u sql/sifrarnik.sql — password_plain izostavljen iz payload-a
+  // znači da UPDATE ne dira postojeći password_encrypted).
+  if (el.sifrarnikPassword.value !== "") {
+    payload.password_plain = el.sifrarnikPassword.value;
+  }
+
+  const { error } = state.editingSifrarnikId
+    ? await supabase.from("sifrarnik").update(payload).eq("id", state.editingSifrarnikId)
+    : await supabase.from("sifrarnik").insert(payload);
+
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  closeSifrarnikModal();
+  await loadSifrarnik();
+  renderSifrarnik();
+  showToast("Sačuvano");
+});
+
+async function deleteSifrarnik(row) {
+  if (!confirm(`Obriši šifru "${row.ime}"?`)) return;
+  const { error } = await supabase.from("sifrarnik").delete().eq("id", row.id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  await loadSifrarnik();
+  renderSifrarnik();
+  showToast("Obrisano");
+}
 
 // ---------- init ----------
 
