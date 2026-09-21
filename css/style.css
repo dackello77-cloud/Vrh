@@ -1084,9 +1084,16 @@ table.naplata-table td.naplata-comment {
   min-height: 26px;
 }
 
+/* Fiksna širina (ne flex:1!) — mask ili otkrivena lozinka nikad ne menja
+   koliko prostora ova ćelija zauzima, pa otkrivanje ne pomera nijednu
+   kolonu posle nje. Duža lozinka od širine kutije se skroluje unutar nje
+   (overflow-x), ne seče se — ništa od sadržaja nije izgubljeno, samo
+   eventualno treba prevući da se vidi kraj. */
 .sifrarnik-pass-mask {
-  flex: 1;
-  min-width: 0;
+  width: 150px;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   white-space: nowrap;
   font-family: ui-monospace, monospace;
   letter-spacing: 1px;

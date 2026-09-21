@@ -387,6 +387,7 @@ const el = {
   sifrarnikKomentar: document.getElementById("sifrarnikKomentar"),
   sifrarnikNewGrupaBtn: document.getElementById("sifrarnikNewGrupaBtn"),
   sifrarnikClearGrupaBtn: document.getElementById("sifrarnikClearGrupaBtn"),
+  sifrarnikDeleteGrupaBtn: document.getElementById("sifrarnikDeleteGrupaBtn"),
   cancelSifrarnikBtn: document.getElementById("cancelSifrarnikBtn"),
 };
 
@@ -7297,6 +7298,31 @@ el.sifrarnikNewGrupaBtn.addEventListener("click", async () => {
 
 el.sifrarnikClearGrupaBtn.addEventListener("click", () => {
   el.sifrarnikGrupa.value = "";
+});
+
+// Trajno briše grupu iz spiska (ne samo sa trenutne šifre) — šifre koje su
+// je koristile ostaju, samo bez grupe (grupa_id se postavlja na null,
+// "on delete set null" u sql/sifrarnik_grupe.sql).
+el.sifrarnikDeleteGrupaBtn.addEventListener("click", async () => {
+  const id = el.sifrarnikGrupa.value;
+  if (!id) {
+    showToast("Nije izabrana grupa", true);
+    return;
+  }
+  const grupa = state.sifrarnikGrupe.find((g) => g.id === id);
+  if (!grupa) return;
+  if (!confirm(`Obriši grupu "${grupa.naziv}" iz spiska? Šifre koje su je koristile ostaju, samo bez grupe.`)) {
+    return;
+  }
+
+  const { error } = await supabase.from("sifrarnik_grupe").delete().eq("id", id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  state.sifrarnikGrupe = state.sifrarnikGrupe.filter((g) => g.id !== id);
+  populateSifrarnikGrupaSelect("");
+  showToast("Grupa obrisana");
 });
 
 function openSifrarnikModal(row) {
