@@ -48,7 +48,10 @@ create or replace function sifrarnik_encrypt_password()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+-- "extensions" pored public: Supabase drži pgcrypto (pgp_sym_encrypt) tamo,
+-- ne u public - bez ovoga funkcija ne vidi tu funkciju (fiksna, eksplicitna
+-- lista šema - i dalje bezbedno protiv search_path napada).
+set search_path = public, extensions
 as $$
 declare
   v_key text;
@@ -122,7 +125,9 @@ create or replace function reveal_sifrarnik_password(p_id uuid)
 returns text
 language plpgsql
 security definer
-set search_path = public
+-- vidi napomenu kod sifrarnik_encrypt_password() - pgp_sym_decrypt je isto
+-- u "extensions" šemi na Supabase-u, ne u public.
+set search_path = public, extensions
 as $$
 declare
   v_key text;
