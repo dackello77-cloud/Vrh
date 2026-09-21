@@ -1084,14 +1084,15 @@ table.naplata-table td.naplata-comment {
   min-height: 26px;
 }
 
-/* Fiksna širina (ne flex:1!) — mask ili otkrivena lozinka nikad ne menja
-   koliko prostora ova ćelija zauzima, pa otkrivanje ne pomera nijednu
-   kolonu posle nje. Duža lozinka od širine kutije se skroluje unutar nje
-   (overflow-x), ne seče se — ništa od sadržaja nije izgubljeno, samo
-   eventualno treba prevući da se vidi kraj. */
+/* Kolona Password ima fiksnu širinu (#sifrarnikTable table-layout:fixed
+   ispod) - to je ono što stvarno sprečava pomeranje ostalih kolona pri
+   otkrivanju, ne širina ovog mask elementa. Zato ovaj element sme (i treba)
+   da popuni ceo taj fiksni prostor (flex:1) — duža lozinka od raspoložive
+   širine se skroluje unutar iste, i dalje fiksne, kolone (overflow-x), ne
+   seče se. */
 .sifrarnik-pass-mask {
-  width: 150px;
-  flex: 0 0 auto;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   white-space: nowrap;
@@ -1145,6 +1146,32 @@ table.naplata-table td.naplata-comment {
 
 .sifrarnik-grupa-row select {
   flex: 1;
+}
+
+/* table-layout:fixed - bez ovoga (auto layout) browser je nepredvidivo
+   davao Password koloni mnogo više prostora nego što joj treba, dok su
+   Link/Pristup ispadale stešnjene. Sa fiksnim rasporedom svaka kolona ima
+   tačno onoliko koliko joj je dodeljeno, uvek - i to je i pravi razlog zašto
+   otkrivanje lozinke više ne pomera ništa (ne širina mask elementa samog
+   po sebi, videti .sifrarnik-pass-mask). Komentar nema zadatu širinu pa
+   uzima sav preostali prostor. */
+#sifrarnikTable {
+  table-layout: fixed;
+}
+#sifrarnikTable th:nth-child(1), #sifrarnikTable td:nth-child(1) { width: 140px; }
+#sifrarnikTable th:nth-child(2), #sifrarnikTable td:nth-child(2) { width: 160px; }
+#sifrarnikTable th:nth-child(3), #sifrarnikTable td:nth-child(3) { width: 220px; }
+#sifrarnikTable th:nth-child(4), #sifrarnikTable td:nth-child(4) { width: 150px; }
+#sifrarnikTable th:nth-child(5), #sifrarnikTable td:nth-child(5) { width: 110px; }
+#sifrarnikTable th:nth-child(7), #sifrarnikTable td:nth-child(7) { width: 68px; }
+
+#sifrarnikTable td:nth-child(1),
+#sifrarnikTable td:nth-child(2),
+#sifrarnikTable td:nth-child(4),
+#sifrarnikTable td:nth-child(5),
+#sifrarnikTable td:nth-child(6) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Naslovni red iznad svake grupe u tabeli — vizuelno grupiše redove sa istom
