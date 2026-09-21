@@ -2051,8 +2051,15 @@ table.orders-table th, table.orders-table td {
   margin: 4px 0 12px;
 }
 
+.stock-upload-row {
+  display: flex;
+  gap: 8px;
+}
+
 .stock-upload-btn {
   cursor: pointer;
+  flex: 1;
+  text-align: center;
 }
 
 .stock-ocr-previews {

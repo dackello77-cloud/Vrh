@@ -440,10 +440,16 @@
 
         <div class="stock-modal-divider">ili</div>
 
-        <label class="btn stock-upload-btn">
-          📷 Učitaj sliku/slike (može više odjednom)
-          <input type="file" id="stockOcrFile" accept="image/*" capture="environment" multiple hidden />
-        </label>
+        <div class="stock-upload-row">
+          <label class="btn stock-upload-btn">
+            📷 Slikaj
+            <input type="file" id="stockOcrFile" accept="image/*" capture="environment" multiple hidden />
+          </label>
+          <label class="btn stock-upload-btn">
+            🖼️ Iz galerije
+            <input type="file" id="stockOcrGalleryFile" accept="image/*" multiple hidden />
+          </label>
+        </div>
         <div id="stockOcrStatus" class="section-hint"></div>
         <div id="stockOcrPreviews" class="stock-ocr-previews"></div>
         <div id="stockOcrResult" class="stock-ocr-result" hidden>

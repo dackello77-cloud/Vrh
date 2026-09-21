@@ -245,6 +245,7 @@ const el = {
   stockConnectorQtyInput: document.getElementById("stockConnectorQtyInput"),
   stockConnectorQtyAddBtn: document.getElementById("stockConnectorQtyAddBtn"),
   stockOcrFile: document.getElementById("stockOcrFile"),
+  stockOcrGalleryFile: document.getElementById("stockOcrGalleryFile"),
   stockOcrStatus: document.getElementById("stockOcrStatus"),
   stockOcrPreviews: document.getElementById("stockOcrPreviews"),
   stockOcrResult: document.getElementById("stockOcrResult"),
@@ -6062,6 +6063,7 @@ function openStockAddModal() {
   el.stockDeviceSerial.value = "";
   el.stockConnectorQtyInput.value = "";
   el.stockOcrFile.value = "";
+  el.stockOcrGalleryFile.value = "";
   el.stockOcrStatus.textContent = "";
   el.stockOcrPreviews.innerHTML = "";
   el.stockOcrResult.hidden = true;
@@ -6218,6 +6220,17 @@ function normalizeKnownSerial(s) {
   return m ? `3B5000${m[1]}` : s;
 }
 
+// Tesseract povremeno pročita "P/N:" (Part Number, npr. "PT40-Q") ili "Name:"
+// (npr. "PT40_387F") kao "S/N:" — slova P i S liče u sitnom fontu nalepnice,
+// pa anchorRe ispod ume da pokupi model uređaja kao lažan kandidat pored
+// pravog SN (video se na PT40 nalepnicama — FCC ID/P N/Name red ima "PT40"
+// odmah uz taj lažni "S/N:"). Serijski broj nikad ne počinje sa "PT" + cifra
+// (to je isključivo obrazac modela uređaja: PT30/PT40/PT50/...), pa se takav
+// "kandidat" ovde odbacuje bez obzira odakle je anchor stigao.
+function looksLikeDeviceModel(candidate) {
+  return /^PT\d/i.test(candidate);
+}
+
 // Samo tokeni nađeni uz "SN"/"S/N" oznaku ili u poznatom VRH formatu
 // (3B5000 + 6 cifara). Ovo je jedini izvor kandidata dok god BAR JEDAN prolaz
 // (cela slika ili neka od pojedinačno isečenih nalepnica) nešto nađe — MAC,
@@ -6236,7 +6249,7 @@ function extractAnchoredSerials(text) {
   let m;
   while ((m = anchorRe.exec(text)) !== null) {
     const clean = normalizeKnownSerial(m[1].toUpperCase().replace(/[^A-Z0-9-]/g, ""));
-    if (clean.length >= 6 && !seenAnchored.has(clean)) {
+    if (clean.length >= 6 && !looksLikeDeviceModel(clean) && !seenAnchored.has(clean)) {
       seenAnchored.add(clean);
       anchored.push(clean);
     }
@@ -6263,7 +6276,7 @@ function extractGenericTokens(text) {
   const out = [];
   for (const m of matches) {
     const clean = m.toUpperCase();
-    if (SN_JUNK_WORDS.has(clean)) continue;
+    if (SN_JUNK_WORDS.has(clean) || looksLikeDeviceModel(clean)) continue;
     if (!seen.has(clean)) {
       seen.add(clean);
       out.push(clean);
@@ -6453,13 +6466,17 @@ function renderOcrCandidates(candidates) {
   }
 }
 
-el.stockOcrFile.addEventListener("change", async () => {
-  const files = Array.from(el.stockOcrFile.files || []);
+// Zajednička obrada za oba izvora slike — "📷 Slikaj" (capture="environment",
+// otvara kameru direktno) i "🖼️ Iz galerije" (obična selekcija fajlova, bez
+// capture) — korisnik može i da fotografiše na licu mesta i da naknadno
+// izabere već snimljene slike iz galerije.
+async function handleOcrFilesSelected(inputEl) {
+  const files = Array.from(inputEl.files || []);
   if (files.length === 0) return;
 
   if (!el.stockDeviceProduct.value) {
     showToast("Prvo izaberi uređaj (PT30/PT40) gore", true);
-    el.stockOcrFile.value = "";
+    inputEl.value = "";
     return;
   }
 
@@ -6556,7 +6573,10 @@ el.stockOcrFile.addEventListener("change", async () => {
     console.error(err);
     el.stockOcrStatus.textContent = "Greška pri OCR čitanju: " + err.message;
   }
-});
+}
+
+el.stockOcrFile.addEventListener("change", () => handleOcrFilesSelected(el.stockOcrFile));
+el.stockOcrGalleryFile.addEventListener("change", () => handleOcrFilesSelected(el.stockOcrGalleryFile));
 
 el.stockOcrConfirmBtn.addEventListener("click", () => {
   const productId = el.stockDeviceProduct.value;
@@ -6579,6 +6599,7 @@ el.stockOcrConfirmBtn.addEventListener("click", () => {
   el.stockOcrResult.hidden = true;
   el.stockOcrPreviews.innerHTML = "";
   el.stockOcrFile.value = "";
+  el.stockOcrGalleryFile.value = "";
   el.stockOcrStatus.textContent = "";
   state.ocrCandidateSerials = [];
   renderStockPendingList();
