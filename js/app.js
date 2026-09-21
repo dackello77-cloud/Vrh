@@ -6266,6 +6266,19 @@ function extractAnchoredSerials(text) {
   return anchored;
 }
 
+// Odbacuje kraća očitavanja koja su tačan početak nekog dužeg kandidata
+// (isti fizički SN, samo mu je jedan prolaz "pojeo" poslednju cifru/cifre —
+// vidi poziv mesto ovde ispod). Zadržava originalan redosled kandidata.
+function dedupePrefixCandidates(candidates) {
+  const byLengthDesc = [...candidates].sort((a, b) => b.length - a.length);
+  const kept = [];
+  for (const c of byLengthDesc) {
+    if (kept.some((k) => k !== c && k.startsWith(c))) continue;
+    kept.push(c);
+  }
+  return candidates.filter((c) => kept.includes(c));
+}
+
 // Poslednja linija odbrane kad NIJEDAN prolaz (ni cela slika, ni ijedna
 // pojedinačno isečena nalepnica) nije našao ništa uz "SN" oznaku — tek tada
 // vredi ponuditi generički spisak (bez očiglednog šuma sa nalepnice) da
@@ -6545,11 +6558,19 @@ async function handleOcrFilesSelected(inputEl) {
       }
     }
 
+    // Isti fizički SN se često čita više puta (cela slika + poseban prolaz
+    // po isečenoj nalepnici) — kad Tesseract jednom pri tom izgubi POSLEDNJU
+    // cifru (čest kviza kod OCR-a), kraće očitavanje je UVEK tačan početak
+    // dužeg (nikad slučajno drugačija vrednost), pa se ovde odbacuje u
+    // korist dužeg/potpunijeg — umesto da se ponudi kao poseban, pogrešan
+    // kandidat pored ispravnog.
+    const anchoredDeduped = dedupePrefixCandidates(anchoredCandidates);
+
     // Generički fallback (bez SN oznake) se koristi SAMO ako baš nijedan
     // prolaz nije našao nijedan pravi SN — inače bi jedan "prljav" prolaz
     // (npr. cela slika) zatrpao listu sa MAC/CODE/FCC šumom pored pravih SN
     // vrednosti koje je neki drugi (čistiji) prolaz uredno našao.
-    let finalCandidates = anchoredCandidates;
+    let finalCandidates = anchoredDeduped;
     if (finalCandidates.length === 0) {
       const genericSeen = new Set();
       finalCandidates = [];
