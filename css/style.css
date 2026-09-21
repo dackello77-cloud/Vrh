@@ -2420,10 +2420,11 @@ button.home-tile-btn {
     display: grid;
   }
 
-  /* Stanje uređaja: samo pregled na mobilnom - bez dodavanja/brisanja, bez
-     serijskih brojeva/statusa (samo naziv + broj na stanju), i jedna kolona
-     ispod druge umesto dve kolone jedna pored druge. */
-  #stockAddBtn,
+  /* Stanje uređaja na mobilnom: "+ Dodaj" (uključujući slikanje uređaja
+     preko kamere) ostaje uključeno — najlakše je telefonom fotografisati
+     serijske brojeve na terenu. I dalje bez detaljnog spiska serijskih
+     brojeva po tipu uređaja (samo naziv + broj na stanju) i jedna kolona
+     ispod druge umesto dve jedna pored druge — to ostaje pojednostavljeno. */
   .stock-device-type-section .table-wrap {
     display: none;
   }
@@ -2431,6 +2432,13 @@ button.home-tile-btn {
   .stock-columns {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  /* "Dodaj na stanje" modal: polje za ručni unos + dugme jedno pored drugog
+     ne stanu udobno na uzak ekran (placeholder tekst se seče) — jedno ispod
+     drugog, puna širina, lakše za kucanje/dodirivanje. */
+  .stock-modal-manual {
+    flex-direction: column;
   }
 
   /* Dnevni izveštaj sa Početne: samo generisan sadržaj, bez tabova/datuma/dugmadi */
