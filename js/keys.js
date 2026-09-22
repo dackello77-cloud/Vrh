@@ -18,11 +18,17 @@ const el = {
   loginError: document.getElementById("loginError"),
   app: document.getElementById("app"),
   logoutBtn: document.getElementById("logoutBtn"),
+  tabNav: document.getElementById("tabNav"),
+  tabSifrarnik: document.getElementById("tabSifrarnik"),
+  tabInformacije: document.getElementById("tabInformacije"),
+  globalNoAccess: document.getElementById("globalNoAccess"),
+  pageSifrarnik: document.getElementById("pageSifrarnik"),
+  pageInformacije: document.getElementById("pageInformacije"),
   sifrarnikToolbar: document.getElementById("sifrarnikToolbar"),
   sifrarnikSearch: document.getElementById("sifrarnikSearch"),
   sifrarnikAddBtn: document.getElementById("sifrarnikAddBtn"),
   sifrarnikList: document.getElementById("sifrarnikList"),
-  noAccessState: document.getElementById("noAccessState"),
+  sifrarnikNoAccess: document.getElementById("sifrarnikNoAccess"),
   sifrarnikModal: document.getElementById("sifrarnikModal"),
   sifrarnikModalTitle: document.getElementById("sifrarnikModalTitle"),
   sifrarnikForm: document.getElementById("sifrarnikForm"),
@@ -35,8 +41,25 @@ const el = {
   sifrarnikKomentar: document.getElementById("sifrarnikKomentar"),
   sifrarnikNewGrupaBtn: document.getElementById("sifrarnikNewGrupaBtn"),
   sifrarnikClearGrupaBtn: document.getElementById("sifrarnikClearGrupaBtn"),
+  sifrarnikRenameGrupaBtn: document.getElementById("sifrarnikRenameGrupaBtn"),
   sifrarnikDeleteGrupaBtn: document.getElementById("sifrarnikDeleteGrupaBtn"),
   cancelSifrarnikBtn: document.getElementById("cancelSifrarnikBtn"),
+  informacijeToolbar: document.getElementById("informacijeToolbar"),
+  informacijeSearch: document.getElementById("informacijeSearch"),
+  informacijeAddBtn: document.getElementById("informacijeAddBtn"),
+  informacijeList: document.getElementById("informacijeList"),
+  informacijeNoAccess: document.getElementById("informacijeNoAccess"),
+  informacijaModal: document.getElementById("informacijaModal"),
+  informacijaModalTitle: document.getElementById("informacijaModalTitle"),
+  informacijaForm: document.getElementById("informacijaForm"),
+  informacijaGrupa: document.getElementById("informacijaGrupa"),
+  informacijaNaslov: document.getElementById("informacijaNaslov"),
+  informacijaTekst: document.getElementById("informacijaTekst"),
+  informacijaNewGrupaBtn: document.getElementById("informacijaNewGrupaBtn"),
+  informacijaClearGrupaBtn: document.getElementById("informacijaClearGrupaBtn"),
+  informacijaRenameGrupaBtn: document.getElementById("informacijaRenameGrupaBtn"),
+  informacijaDeleteGrupaBtn: document.getElementById("informacijaDeleteGrupaBtn"),
+  cancelInformacijaBtn: document.getElementById("cancelInformacijaBtn"),
   shareModal: document.getElementById("shareModal"),
   cancelShareBtn: document.getElementById("cancelShareBtn"),
   shareOptionBtns: document.querySelectorAll(".share-option"),
@@ -45,10 +68,15 @@ const el = {
 
 const state = {
   permissions: {},
+  activeTab: "sifrarnik",
   sifrarnik: [],
   sifrarnikGrupe: [],
   expandedGroups: new Set(),
   editingId: null,
+  informacije: [],
+  informacijeGrupe: [],
+  expandedInformacijeGroups: new Set(),
+  editingInformacijaId: null,
 };
 
 const BEZ_GRUPE_LABEL = "(bez grupe)";
@@ -84,12 +112,12 @@ function showToast(message, isError = false) {
   }, 3000);
 }
 
-function canEdit() {
-  return state.permissions.sifrarnik === "edit";
+function canEdit(page) {
+  return state.permissions[page] === "edit";
 }
 
-function canView() {
-  const p = state.permissions.sifrarnik;
+function canView(page) {
+  const p = state.permissions[page];
   return p === "view" || p === "edit";
 }
 
@@ -116,6 +144,11 @@ function showLoginPage(message) {
   }
 }
 
+// Dve nezavisne stranice u istom app-u (Šifrarnik i Informacije), svaka sa
+// sopstvenom "sifrarnik"/"informacije" dozvolom (view/edit) iz iste role kao
+// u glavnoj app. Tab dugme za stranicu na koju korisnik nema ni pregled se
+// sakriva; ako ima pristup samo jednoj, tab traka se uopšte ne prikazuje
+// (nema šta da se bira) i ta stranica se otvara direktno.
 async function bootstrapAfterLogin() {
   await loadMyPermissions();
   el.pageLogin.hidden = true;
@@ -123,21 +156,60 @@ async function bootstrapAfterLogin() {
   el.loginEmail.value = "";
   el.loginPassword.value = "";
 
-  if (!canView()) {
-    el.sifrarnikList.hidden = true;
-    el.sifrarnikToolbar.hidden = true;
-    el.noAccessState.hidden = false;
+  const canS = canView("sifrarnik");
+  const canI = canView("informacije");
+  el.tabSifrarnik.hidden = !canS;
+  el.tabInformacije.hidden = !canI;
+  el.tabNav.hidden = !(canS && canI);
+
+  if (!canS && !canI) {
+    el.pageSifrarnik.hidden = true;
+    el.pageInformacije.hidden = true;
+    el.globalNoAccess.hidden = false;
     return;
   }
-
-  el.sifrarnikList.hidden = false;
-  el.sifrarnikToolbar.hidden = false;
-  el.noAccessState.hidden = true;
-  el.sifrarnikAddBtn.hidden = !canEdit();
-
-  await Promise.all([loadSifrarnik(), loadSifrarnikGrupe()]);
-  renderSifrarnik();
+  el.globalNoAccess.hidden = true;
+  await showTab(canS ? "sifrarnik" : "informacije");
 }
+
+async function showTab(page) {
+  state.activeTab = page;
+  el.tabSifrarnik.classList.toggle("is-active", page === "sifrarnik");
+  el.tabInformacije.classList.toggle("is-active", page === "informacije");
+  el.pageSifrarnik.hidden = page !== "sifrarnik";
+  el.pageInformacije.hidden = page !== "informacije";
+
+  if (page === "sifrarnik") {
+    if (!canView("sifrarnik")) {
+      el.sifrarnikList.hidden = true;
+      el.sifrarnikToolbar.hidden = true;
+      el.sifrarnikNoAccess.hidden = false;
+      return;
+    }
+    el.sifrarnikList.hidden = false;
+    el.sifrarnikToolbar.hidden = false;
+    el.sifrarnikNoAccess.hidden = true;
+    el.sifrarnikAddBtn.hidden = !canEdit("sifrarnik");
+    await Promise.all([loadSifrarnik(), loadSifrarnikGrupe()]);
+    renderSifrarnik();
+  } else {
+    if (!canView("informacije")) {
+      el.informacijeList.hidden = true;
+      el.informacijeToolbar.hidden = true;
+      el.informacijeNoAccess.hidden = false;
+      return;
+    }
+    el.informacijeList.hidden = false;
+    el.informacijeToolbar.hidden = false;
+    el.informacijeNoAccess.hidden = true;
+    el.informacijeAddBtn.hidden = !canEdit("informacije");
+    await Promise.all([loadInformacije(), loadInformacijeGrupe()]);
+    renderInformacije();
+  }
+}
+
+el.tabSifrarnik.addEventListener("click", () => showTab("sifrarnik"));
+el.tabInformacije.addEventListener("click", () => showTab("informacije"));
 
 el.loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -217,7 +289,7 @@ function renderSifrarnik() {
     return a.localeCompare(b);
   });
 
-  const editable = canEdit();
+  const editable = canEdit("sifrarnik");
 
   for (const key of groupKeys) {
     const group = groups.get(key);
@@ -274,7 +346,7 @@ function renderKeyCard(row, editable) {
     shareBtn.className = "keys-icon-btn";
     shareBtn.innerHTML = ICON_SHARE;
     shareBtn.title = "Podeli";
-    shareBtn.addEventListener("click", () => openShareModal(row));
+    shareBtn.addEventListener("click", () => openShareModalForSifrarnik(row));
     actions.appendChild(shareBtn);
 
     const delBtn = document.createElement("button");
@@ -410,6 +482,40 @@ el.sifrarnikClearGrupaBtn.addEventListener("click", () => {
   el.sifrarnikGrupa.value = "";
 });
 
+el.sifrarnikRenameGrupaBtn.addEventListener("click", async () => {
+  const id = el.sifrarnikGrupa.value;
+  if (!id) {
+    showToast("Nije izabrana grupa", true);
+    return;
+  }
+  const grupa = state.sifrarnikGrupe.find((g) => g.id === id);
+  if (!grupa) return;
+
+  const naziv = window.prompt("Novi naziv grupe:", grupa.naziv);
+  if (naziv === null) return;
+  const trimmed = naziv.trim();
+  if (!trimmed || trimmed === grupa.naziv) return;
+
+  const existing = state.sifrarnikGrupe.find(
+    (g) => g.id !== id && g.naziv.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (existing) {
+    showToast(`Grupa "${trimmed}" već postoji`, true);
+    return;
+  }
+
+  const { error } = await supabase.from("sifrarnik_grupe").update({ naziv: trimmed }).eq("id", id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  grupa.naziv = trimmed;
+  state.sifrarnikGrupe.sort((a, b) => a.naziv.localeCompare(b.naziv));
+  populateSifrarnikGrupaSelect(id);
+  renderSifrarnik();
+  showToast("Grupa preimenovana");
+});
+
 el.sifrarnikDeleteGrupaBtn.addEventListener("click", async () => {
   const id = el.sifrarnikGrupa.value;
   if (!id) {
@@ -517,17 +623,311 @@ async function deleteSifrarnik(row) {
   showToast("Obrisano");
 }
 
-// ---------- šifrarnik: podeli (WhatsApp/Viber/Telegram/Email) ----------
-// Svaki klik na "Podeli" dohvata lozinku kroz istu reveal_sifrarnik_password()
-// RPC kao dugme "Prikaži"/"Kopiraj" (upisuje se u sifrarnik_audit_log), pa se
-// tekst poruke sastavlja i šalje preko izabranog kanala. Sam sadržaj poruke
-// napušta app (spolja se ne može kontrolisati šta WhatsApp/Viber/Telegram/
-// mejl klijent dalje rade s njim) — dugme je namerno dostupno samo korisniku
-// sa edit dozvolom, isto kao Prikaži/Kopiraj/Izmeni/Obriši.
+// ---------- informacije: učitavanje ----------
+
+async function loadInformacije() {
+  const { data, error } = await supabase
+    .from("informacije")
+    .select("id,grupa_id,naslov,tekst")
+    .order("naslov", { ascending: true });
+  if (error) {
+    showToast("Greška pri učitavanju informacija: " + error.message, true);
+    state.informacije = [];
+    return;
+  }
+  state.informacije = data || [];
+}
+
+async function loadInformacijeGrupe() {
+  const { data, error } = await supabase.from("informacije_grupe").select("id,naziv").order("naziv");
+  if (error) {
+    showToast("Greška pri učitavanju grupa: " + error.message, true);
+    state.informacijeGrupe = [];
+    return;
+  }
+  state.informacijeGrupe = data || [];
+}
+
+// ---------- informacije: prikaz (kartice, grupisano — isti obrazac kao šifrarnik) ----------
+
+function renderInformacije() {
+  el.informacijeList.innerHTML = "";
+  const grupaNameById = new Map(state.informacijeGrupe.map((g) => [g.id, g.naziv]));
+  const q = (el.informacijeSearch.value || "").trim().toLowerCase();
+  const rows = q
+    ? state.informacije.filter((r) =>
+        [grupaNameById.get(r.grupa_id), r.naslov, r.tekst].some((v) => (v || "").toLowerCase().includes(q))
+      )
+    : state.informacije;
+
+  if (rows.length === 0) {
+    el.informacijeList.appendChild(
+      el_("div", "empty-state", state.informacije.length ? "Nema rezultata pretrage." : "Nema unetih informacija.")
+    );
+    return;
+  }
+
+  const groups = new Map(); // groupKey -> { label, isNone, rows: [] }
+  for (const row of rows) {
+    const groupName = grupaNameById.get(row.grupa_id) || null;
+    const key = groupName || BEZ_GRUPE_LABEL;
+    if (!groups.has(key)) groups.set(key, { label: groupName || BEZ_GRUPE_LABEL, isNone: !groupName, rows: [] });
+    groups.get(key).rows.push(row);
+  }
+  const groupKeys = Array.from(groups.keys()).sort((a, b) => {
+    const ga = groups.get(a);
+    const gb = groups.get(b);
+    if (ga.isNone && !gb.isNone) return 1;
+    if (!ga.isNone && gb.isNone) return -1;
+    return a.localeCompare(b);
+  });
+
+  const editable = canEdit("informacije");
+
+  for (const key of groupKeys) {
+    const group = groups.get(key);
+    group.rows.sort((a, b) => (a.naslov || "").localeCompare(b.naslov || ""));
+
+    const expanded = q !== "" || state.expandedInformacijeGroups.has(key);
+
+    const groupBtn = el_("button", "keys-group-btn", `${expanded ? "▾" : "▸"} ${group.label} (${group.rows.length})`);
+    groupBtn.type = "button";
+    groupBtn.addEventListener("click", () => {
+      if (state.expandedInformacijeGroups.has(key)) state.expandedInformacijeGroups.delete(key);
+      else state.expandedInformacijeGroups.add(key);
+      renderInformacije();
+    });
+    el.informacijeList.appendChild(groupBtn);
+
+    if (!expanded) continue;
+
+    for (const row of group.rows) {
+      el.informacijeList.appendChild(renderInformacijaCard(row, editable));
+    }
+  }
+}
+
+function renderInformacijaCard(row, editable) {
+  const card = el_("div", "key-card");
+
+  const head = el_("div", "key-card-head");
+  head.appendChild(el_("div", "key-card-name", row.naslov || ""));
+  if (editable) {
+    const actions = el_("div", "key-card-actions");
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "keys-icon-btn";
+    editBtn.innerHTML = ICON_EDIT;
+    editBtn.title = "Izmeni";
+    editBtn.addEventListener("click", () => openInformacijaModal(row));
+    actions.appendChild(editBtn);
+
+    const shareBtn = document.createElement("button");
+    shareBtn.type = "button";
+    shareBtn.className = "keys-icon-btn";
+    shareBtn.innerHTML = ICON_SHARE;
+    shareBtn.title = "Podeli";
+    shareBtn.addEventListener("click", () => openShareModalForInformacija(row));
+    actions.appendChild(shareBtn);
+
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "keys-icon-btn keys-icon-btn-danger";
+    delBtn.innerHTML = ICON_TRASH;
+    delBtn.title = "Obriši";
+    delBtn.addEventListener("click", () => deleteInformacija(row));
+    actions.appendChild(delBtn);
+
+    head.appendChild(actions);
+  }
+  card.appendChild(head);
+
+  if (row.tekst) {
+    const tekstNode = el_("div", "key-note-text", row.tekst);
+    card.appendChild(tekstNode);
+  }
+
+  return card;
+}
+
+el.informacijeSearch.addEventListener("input", renderInformacije);
+
+// ---------- informacije: grupe (u modalu) ----------
+
+function populateInformacijaGrupaSelect(selectedId) {
+  el.informacijaGrupa.innerHTML = "";
+  el.informacijaGrupa.appendChild(new Option(BEZ_GRUPE_LABEL, ""));
+  for (const g of state.informacijeGrupe) {
+    el.informacijaGrupa.appendChild(new Option(g.naziv, g.id));
+  }
+  el.informacijaGrupa.value = selectedId || "";
+}
+
+el.informacijaNewGrupaBtn.addEventListener("click", async () => {
+  const naziv = window.prompt("Naziv nove grupe:", "");
+  if (naziv === null) return;
+  const trimmed = naziv.trim();
+  if (!trimmed) return;
+
+  const existing = state.informacijeGrupe.find((g) => g.naziv.toLowerCase() === trimmed.toLowerCase());
+  if (existing) {
+    populateInformacijaGrupaSelect(existing.id);
+    return;
+  }
+
+  const { data, error } = await supabase.from("informacije_grupe").insert({ naziv: trimmed }).select().single();
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  state.informacijeGrupe.push(data);
+  state.informacijeGrupe.sort((a, b) => a.naziv.localeCompare(b.naziv));
+  populateInformacijaGrupaSelect(data.id);
+});
+
+el.informacijaClearGrupaBtn.addEventListener("click", () => {
+  el.informacijaGrupa.value = "";
+});
+
+el.informacijaRenameGrupaBtn.addEventListener("click", async () => {
+  const id = el.informacijaGrupa.value;
+  if (!id) {
+    showToast("Nije izabrana grupa", true);
+    return;
+  }
+  const grupa = state.informacijeGrupe.find((g) => g.id === id);
+  if (!grupa) return;
+
+  const naziv = window.prompt("Novi naziv grupe:", grupa.naziv);
+  if (naziv === null) return;
+  const trimmed = naziv.trim();
+  if (!trimmed || trimmed === grupa.naziv) return;
+
+  const existing = state.informacijeGrupe.find(
+    (g) => g.id !== id && g.naziv.toLowerCase() === trimmed.toLowerCase()
+  );
+  if (existing) {
+    showToast(`Grupa "${trimmed}" već postoji`, true);
+    return;
+  }
+
+  const { error } = await supabase.from("informacije_grupe").update({ naziv: trimmed }).eq("id", id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  grupa.naziv = trimmed;
+  state.informacijeGrupe.sort((a, b) => a.naziv.localeCompare(b.naziv));
+  populateInformacijaGrupaSelect(id);
+  renderInformacije();
+  showToast("Grupa preimenovana");
+});
+
+el.informacijaDeleteGrupaBtn.addEventListener("click", async () => {
+  const id = el.informacijaGrupa.value;
+  if (!id) {
+    showToast("Nije izabrana grupa", true);
+    return;
+  }
+  const grupa = state.informacijeGrupe.find((g) => g.id === id);
+  if (!grupa) return;
+
+  const usedCount = state.informacije.filter((s) => s.grupa_id === id).length;
+  if (usedCount > 0) {
+    showToast(
+      `Grupa "${grupa.naziv}" se koristi u ${usedCount} ${usedCount === 1 ? "informaciji" : "informacija"} — prvo im promeni grupu, pa tek onda obriši grupu.`,
+      true
+    );
+    return;
+  }
+
+  if (!confirm(`Obriši grupu "${grupa.naziv}" iz spiska?`)) return;
+
+  const { error } = await supabase.from("informacije_grupe").delete().eq("id", id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  state.informacijeGrupe = state.informacijeGrupe.filter((g) => g.id !== id);
+  populateInformacijaGrupaSelect("");
+  showToast("Grupa obrisana");
+});
+
+// ---------- informacije: dodaj / izmeni / obriši ----------
+
+function openInformacijaModal(row) {
+  state.editingInformacijaId = row ? row.id : null;
+  el.informacijaModalTitle.textContent = row ? "Izmena informacije" : "Nova informacija";
+  populateInformacijaGrupaSelect(row?.grupa_id || "");
+  el.informacijaNaslov.value = row?.naslov || "";
+  el.informacijaTekst.value = row?.tekst || "";
+  el.informacijaModal.hidden = false;
+}
+
+function closeInformacijaModal() {
+  el.informacijaModal.hidden = true;
+  el.informacijaForm.reset();
+  state.editingInformacijaId = null;
+}
+
+el.informacijeAddBtn.addEventListener("click", () => openInformacijaModal(null));
+el.cancelInformacijaBtn.addEventListener("click", closeInformacijaModal);
+el.informacijaModal.addEventListener("click", (e) => {
+  if (e.target === el.informacijaModal) closeInformacijaModal();
+});
+
+el.informacijaForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const naslov = el.informacijaNaslov.value.trim();
+  if (!naslov) {
+    showToast("Naslov je obavezan", true);
+    return;
+  }
+
+  const payload = {
+    grupa_id: el.informacijaGrupa.value || null,
+    naslov,
+    tekst: el.informacijaTekst.value.trim() || null,
+  };
+
+  const { error } = state.editingInformacijaId
+    ? await supabase.from("informacije").update(payload).eq("id", state.editingInformacijaId)
+    : await supabase.from("informacije").insert(payload);
+
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  closeInformacijaModal();
+  await loadInformacije();
+  renderInformacije();
+  showToast("Sačuvano");
+});
+
+async function deleteInformacija(row) {
+  if (!confirm(`Obriši informaciju "${row.naslov}"?`)) return;
+  const { error } = await supabase.from("informacije").delete().eq("id", row.id);
+  if (error) {
+    showToast("Greška: " + error.message, true);
+    return;
+  }
+  await loadInformacije();
+  renderInformacije();
+  showToast("Obrisano");
+}
+
+// ---------- podeli (WhatsApp/Viber/Telegram/Email) — zajedničko za obe stranice ----------
+// Za šifrarnik: svaki klik na "Podeli" dohvata lozinku kroz istu
+// reveal_sifrarnik_password() RPC kao dugme "Prikaži"/"Kopiraj" (upisuje se u
+// sifrarnik_audit_log). Sam sadržaj poruke napušta app (spolja se ne može
+// kontrolisati šta WhatsApp/Viber/Telegram/mejl klijent dalje rade s njim) —
+// dugme je namerno dostupno samo korisniku sa edit dozvolom, isto kao
+// Prikaži/Kopiraj/Izmeni/Obriši.
 let shareMessage = "";
 let shareSubject = "";
 
-async function openShareModal(row) {
+async function openShareModalForSifrarnik(row) {
   const { data, error } = await supabase.rpc("reveal_sifrarnik_password", { p_id: row.id });
   if (error) {
     showToast("Greška: " + error.message, true);
@@ -541,6 +941,14 @@ async function openShareModal(row) {
   if (row.komentar) lines.push(`Komentar: ${row.komentar}`);
   shareMessage = lines.join("\n");
   shareSubject = row.ime || "Šifrarnik";
+  el.shareModal.hidden = false;
+}
+
+function openShareModalForInformacija(row) {
+  const lines = [row.naslov || ""];
+  if (row.tekst) lines.push(row.tekst);
+  shareMessage = lines.join("\n");
+  shareSubject = row.naslov || "Informacija";
   el.shareModal.hidden = false;
 }
 

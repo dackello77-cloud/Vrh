@@ -31,7 +31,15 @@ const PAGE_LABELS = {
   stock: "Stanje uređaja",
   sifrarnik: "Šifrarnik",
   settings: "Podešavanja",
+  informacije: "Informacije (u keys.html)",
 };
+// Stranice koje se dodeljuju po roli, ali NEMAJU svoju tab/nav dugme ovde u
+// glavnoj app (prikazuju se samo u keys.html) — role editor (openRoleModal/
+// renderRoles) ih prikazuje pored VALID_PAGES da bi im se dozvola mogla
+// podesiti na jednom mestu, bez da diraju showPage()/firstAccessiblePage()
+// koji ostaju vezani isključivo za stvarne stranice ovde u glavnoj app.
+const EXTRA_PERM_PAGES = ["informacije"];
+const ROLE_PERM_PAGES = [...VALID_PAGES, ...EXTRA_PERM_PAGES];
 const NAV_BTN_BY_PAGE = {
   home: "navHome",
   overview: "navOverview",
@@ -6844,7 +6852,7 @@ function renderRoles() {
     const permsTd = document.createElement("td");
     const badges = document.createElement("div");
     badges.className = "role-perm-badges";
-    for (const page of VALID_PAGES) {
+    for (const page of ROLE_PERM_PAGES) {
       const level = role.permissions?.[page];
       if (level !== "view" && level !== "edit") continue;
       badges.appendChild(permBadge(page, level));
@@ -6879,7 +6887,7 @@ function openRoleModal(role) {
   el.roleModalTitle.textContent = role ? "Izmena role" : "Nova rola";
   el.roleModalName.value = role ? role.name : "";
   el.roleModalPerms.innerHTML = "";
-  for (const page of VALID_PAGES) {
+  for (const page of ROLE_PERM_PAGES) {
     const row = document.createElement("div");
     row.className = "role-perm-row";
     const selectId = `rolePerm_${page}`;

@@ -111,10 +111,36 @@ body {
   font-size: 18px;
 }
 
+/* ---------- tabovi (Šifrarnik / Informacije) ---------- */
+
+.tab-nav {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px 0;
+  background: var(--header-bg);
+}
+
+.tab-nav[hidden] { display: none; }
+
+.tab-nav-btn {
+  flex: 1;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.75);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+}
+
+.tab-nav-btn.is-active {
+  color: var(--text);
+  background: var(--page-bg);
+}
+
 .toolbar {
-  position: sticky;
-  top: 52px;
-  z-index: 4;
   display: flex;
   gap: 8px;
   padding: 10px 16px;
@@ -249,6 +275,12 @@ body {
 
 .key-row-value a {
   color: var(--accent);
+}
+
+.key-note-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 .key-pass-value {

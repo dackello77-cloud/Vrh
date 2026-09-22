@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 <title>VRH — Šifrarnik</title>
-<link rel="stylesheet" href="css/keys.css?v=20260922b" />
+<link rel="stylesheet" href="css/keys.css?v=20260922e" />
 </head>
 <body>
   <div id="pageLogin" class="login-page">
@@ -20,19 +20,40 @@
 
   <div id="app" hidden>
     <header class="topbar">
-      <h1>Šifrarnik</h1>
+      <h1>VRH</h1>
       <button type="button" id="logoutBtn" class="btn btn-ghost">Odjava</button>
     </header>
 
-    <div id="sifrarnikToolbar" class="toolbar">
-      <input type="text" id="sifrarnikSearch" class="search-input" placeholder="Pretraga..." />
-      <button type="button" id="sifrarnikAddBtn" class="btn btn-primary" hidden>+ Dodaj</button>
+    <nav id="tabNav" class="tab-nav" hidden>
+      <button type="button" id="tabSifrarnik" class="tab-nav-btn is-active">Šifrarnik</button>
+      <button type="button" id="tabInformacije" class="tab-nav-btn">Informacije</button>
+    </nav>
+
+    <div id="globalNoAccess" class="empty-state" hidden>
+      Nemate dozvolu ni za jednu stranicu. Obratite se administratoru.
     </div>
 
-    <main id="sifrarnikList" class="keys-list"></main>
-    <div id="noAccessState" class="empty-state" hidden>
-      Nemate dozvolu za šifrarnik. Obratite se administratoru.
-    </div>
+    <section id="pageSifrarnik">
+      <div id="sifrarnikToolbar" class="toolbar">
+        <input type="text" id="sifrarnikSearch" class="search-input" placeholder="Pretraga..." />
+        <button type="button" id="sifrarnikAddBtn" class="btn btn-primary" hidden>+ Dodaj</button>
+      </div>
+      <main id="sifrarnikList" class="keys-list"></main>
+      <div id="sifrarnikNoAccess" class="empty-state" hidden>
+        Nemate dozvolu za šifrarnik. Obratite se administratoru.
+      </div>
+    </section>
+
+    <section id="pageInformacije" hidden>
+      <div id="informacijeToolbar" class="toolbar">
+        <input type="text" id="informacijeSearch" class="search-input" placeholder="Pretraga..." />
+        <button type="button" id="informacijeAddBtn" class="btn btn-primary" hidden>+ Dodaj</button>
+      </div>
+      <main id="informacijeList" class="keys-list"></main>
+      <div id="informacijeNoAccess" class="empty-state" hidden>
+        Nemate dozvolu za informacije. Obratite se administratoru.
+      </div>
+    </section>
   </div>
 
   <!-- Modal: nova/izmena šifra -->
@@ -45,6 +66,9 @@
           <div class="keys-grupa-row">
             <select id="sifrarnikGrupa"></select>
             <button type="button" id="sifrarnikClearGrupaBtn" class="keys-icon-btn" title="Ukloni grupu sa ove šifre">✕</button>
+            <button type="button" id="sifrarnikRenameGrupaBtn" class="keys-icon-btn" title="Preimenuj izabranu grupu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
             <button type="button" id="sifrarnikDeleteGrupaBtn" class="keys-icon-btn keys-icon-btn-danger" title="Obriši izabranu grupu iz spiska">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
             </button>
@@ -77,6 +101,41 @@
         </label>
         <div class="modal-actions">
           <button type="button" id="cancelSifrarnikBtn" class="btn">Otkaži</button>
+          <button type="submit" class="btn btn-primary">Sačuvaj</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: nova/izmena informacija -->
+  <div id="informacijaModal" class="modal-overlay" hidden>
+    <div class="modal">
+      <h2 id="informacijaModalTitle">Nova informacija</h2>
+      <form id="informacijaForm">
+        <label>
+          Grupa
+          <div class="keys-grupa-row">
+            <select id="informacijaGrupa"></select>
+            <button type="button" id="informacijaClearGrupaBtn" class="keys-icon-btn" title="Ukloni grupu sa ove informacije">✕</button>
+            <button type="button" id="informacijaRenameGrupaBtn" class="keys-icon-btn" title="Preimenuj izabranu grupu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </button>
+            <button type="button" id="informacijaDeleteGrupaBtn" class="keys-icon-btn keys-icon-btn-danger" title="Obriši izabranu grupu iz spiska">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            </button>
+            <button type="button" id="informacijaNewGrupaBtn" class="btn" title="Dodaj novu grupu">+ Nova</button>
+          </div>
+        </label>
+        <label>
+          Naslov
+          <input type="text" id="informacijaNaslov" required />
+        </label>
+        <label>
+          Tekst
+          <textarea id="informacijaTekst" rows="5"></textarea>
+        </label>
+        <div class="modal-actions">
+          <button type="button" id="cancelInformacijaBtn" class="btn">Otkaži</button>
           <button type="submit" class="btn btn-primary">Sačuvaj</button>
         </div>
       </form>
@@ -121,6 +180,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="js/keys.js?v=20260922b"></script>
+  <script type="module" src="js/keys.js?v=20260922e"></script>
 </body>
 </html>
