@@ -17,6 +17,7 @@ const el = {
   loginPassword: document.getElementById("loginPassword"),
   loginError: document.getElementById("loginError"),
   app: document.getElementById("app"),
+  appTopbar: document.getElementById("appTopbar"),
   logoutBtn: document.getElementById("logoutBtn"),
   tabNav: document.getElementById("tabNav"),
   tabSifrarnik: document.getElementById("tabSifrarnik"),
@@ -99,6 +100,25 @@ function el_(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+
+// Toolbar (pretraga + Dodaj) ostaje "zalepljen" ispod topbar-a i tab trake
+// dok se lista skroluje. Visine topbar-a/tab trake nisu fiksne (npr. mogu se
+// promeniti prelamanjem teksta), pa se mere i upisuju kao CSS promenljive
+// umesto da se hardkoduju u CSS-u.
+function updateStickyOffsets() {
+  const topbarH = el.appTopbar ? el.appTopbar.getBoundingClientRect().height : 0;
+  const tabNavH = el.tabNav && !el.tabNav.hidden ? el.tabNav.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty("--topbar-h", `${topbarH}px`);
+  document.documentElement.style.setProperty("--tabnav-h", `${tabNavH}px`);
+}
+
+if (typeof ResizeObserver !== "undefined") {
+  const stickyObserver = new ResizeObserver(updateStickyOffsets);
+  if (el.appTopbar) stickyObserver.observe(el.appTopbar);
+  if (el.tabNav) stickyObserver.observe(el.tabNav);
+} else {
+  window.addEventListener("resize", updateStickyOffsets);
 }
 
 let toastTimer = null;
