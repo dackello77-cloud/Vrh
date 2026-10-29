@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
 <title>VRH — Šifrarnik</title>
-<link rel="stylesheet" href="css/keys.css?v=20260922f" />
+<link rel="stylesheet" href="css/keys.css?v=20261029a" />
 </head>
 <body>
   <div id="pageLogin" class="login-page">
@@ -23,6 +23,8 @@
       <h1>VRH</h1>
       <button type="button" id="logoutBtn" class="btn btn-ghost">Odjava</button>
     </header>
+
+    <nav id="firmaNav" class="firma-nav" hidden></nav>
 
     <nav id="tabNav" class="tab-nav" hidden>
       <button type="button" id="tabSifrarnik" class="tab-nav-btn is-active">Šifrarnik</button>
@@ -61,6 +63,10 @@
     <div class="modal">
       <h2 id="sifrarnikModalTitle">Nova šifra</h2>
       <form id="sifrarnikForm">
+        <label>
+          Firma
+          <select id="sifrarnikFirma"></select>
+        </label>
         <label>
           Grupa
           <div class="keys-grupa-row">
@@ -112,6 +118,10 @@
     <div class="modal">
       <h2 id="informacijaModalTitle">Nova informacija</h2>
       <form id="informacijaForm">
+        <label>
+          Firma
+          <select id="informacijaFirma"></select>
+        </label>
         <label>
           Grupa
           <div class="keys-grupa-row">
@@ -180,6 +190,6 @@
 
   <div id="toast" class="toast" hidden></div>
 
-  <script type="module" src="js/keys.js?v=20260922f"></script>
+  <script type="module" src="js/keys.js?v=20261029a"></script>
 </body>
 </html>

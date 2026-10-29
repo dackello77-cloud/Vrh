@@ -19,6 +19,7 @@ const el = {
   app: document.getElementById("app"),
   appTopbar: document.getElementById("appTopbar"),
   logoutBtn: document.getElementById("logoutBtn"),
+  firmaNav: document.getElementById("firmaNav"),
   tabNav: document.getElementById("tabNav"),
   tabSifrarnik: document.getElementById("tabSifrarnik"),
   tabInformacije: document.getElementById("tabInformacije"),
@@ -33,6 +34,7 @@ const el = {
   sifrarnikModal: document.getElementById("sifrarnikModal"),
   sifrarnikModalTitle: document.getElementById("sifrarnikModalTitle"),
   sifrarnikForm: document.getElementById("sifrarnikForm"),
+  sifrarnikFirma: document.getElementById("sifrarnikFirma"),
   sifrarnikGrupa: document.getElementById("sifrarnikGrupa"),
   sifrarnikIme: document.getElementById("sifrarnikIme"),
   sifrarnikUsername: document.getElementById("sifrarnikUsername"),
@@ -53,6 +55,7 @@ const el = {
   informacijaModal: document.getElementById("informacijaModal"),
   informacijaModalTitle: document.getElementById("informacijaModalTitle"),
   informacijaForm: document.getElementById("informacijaForm"),
+  informacijaFirma: document.getElementById("informacijaFirma"),
   informacijaGrupa: document.getElementById("informacijaGrupa"),
   informacijaNaslov: document.getElementById("informacijaNaslov"),
   informacijaTekst: document.getElementById("informacijaTekst"),
@@ -70,6 +73,7 @@ const el = {
 const state = {
   permissions: {},
   activeTab: "sifrarnik",
+  activeFirma: loadSavedFirma(),
   sifrarnik: [],
   sifrarnikGrupe: [],
   expandedGroups: new Set(),
@@ -81,6 +85,26 @@ const state = {
 };
 
 const BEZ_GRUPE_LABEL = "(bez grupe)";
+
+// Firme — gornji red tabova. Izabrana firma filtrira i Šifrarnik i
+// Informacije (kolona "firma", sql/keys_firma.sql). Stavke bez firme (unete
+// pre ove podele) se vide pod NERAZVRSTANO, i taj tab se prikazuje samo dok
+// takvih stavki ima.
+const FIRME = ["Absolute", "RST", "M&M Tracking", "VRH"];
+const NERAZVRSTANO = "__nerazvrstano";
+const FIRMA_STORAGE_KEY = "keys.activeFirma";
+
+function loadSavedFirma() {
+  try {
+    const saved = localStorage.getItem(FIRMA_STORAGE_KEY);
+    if (FIRME.includes(saved)) return saved;
+  } catch {}
+  return FIRME[0];
+}
+
+function rowFirmaKey(row) {
+  return FIRME.includes(row.firma) ? row.firma : NERAZVRSTANO;
+}
 
 const ICON_EYE =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -108,14 +132,17 @@ function el_(tag, className, text) {
 // umesto da se hardkoduju u CSS-u.
 function updateStickyOffsets() {
   const topbarH = el.appTopbar ? el.appTopbar.getBoundingClientRect().height : 0;
+  const firmaNavH = el.firmaNav && !el.firmaNav.hidden ? el.firmaNav.getBoundingClientRect().height : 0;
   const tabNavH = el.tabNav && !el.tabNav.hidden ? el.tabNav.getBoundingClientRect().height : 0;
   document.documentElement.style.setProperty("--topbar-h", `${topbarH}px`);
+  document.documentElement.style.setProperty("--firmanav-h", `${firmaNavH}px`);
   document.documentElement.style.setProperty("--tabnav-h", `${tabNavH}px`);
 }
 
 if (typeof ResizeObserver !== "undefined") {
   const stickyObserver = new ResizeObserver(updateStickyOffsets);
   if (el.appTopbar) stickyObserver.observe(el.appTopbar);
+  if (el.firmaNav) stickyObserver.observe(el.firmaNav);
   if (el.tabNav) stickyObserver.observe(el.tabNav);
 } else {
   window.addEventListener("resize", updateStickyOffsets);
@@ -183,6 +210,7 @@ async function bootstrapAfterLogin() {
   el.tabNav.hidden = !(canS && canI);
 
   if (!canS && !canI) {
+    el.firmaNav.hidden = true;
     el.pageSifrarnik.hidden = true;
     el.pageInformacije.hidden = true;
     el.globalNoAccess.hidden = false;
@@ -228,6 +256,61 @@ async function showTab(page) {
   }
 }
 
+// ---------- firme (gornji red) ----------
+
+function activeRows() {
+  return state.activeTab === "sifrarnik" ? state.sifrarnik : state.informacije;
+}
+
+function renderFirmaNav() {
+  const rows = activeRows();
+  const counts = new Map();
+  for (const row of rows) {
+    const key = rowFirmaKey(row);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const keys = [...FIRME];
+  if (counts.get(NERAZVRSTANO)) keys.push(NERAZVRSTANO);
+  // Ako je izabrano Nerazvrstano a više nema takvih stavki, vrati na prvu firmu.
+  if (!keys.includes(state.activeFirma)) state.activeFirma = FIRME[0];
+
+  el.firmaNav.innerHTML = "";
+  for (const key of keys) {
+    const btn = el_("button", "firma-nav-btn");
+    btn.type = "button";
+    btn.classList.toggle("is-active", key === state.activeFirma);
+    btn.classList.toggle("is-nerazvrstano", key === NERAZVRSTANO);
+    btn.appendChild(el_("span", null, key === NERAZVRSTANO ? "Nerazvrstano" : key));
+    btn.appendChild(el_("span", "firma-nav-count", String(counts.get(key) || 0)));
+    btn.addEventListener("click", () => selectFirma(key));
+    el.firmaNav.appendChild(btn);
+  }
+  el.firmaNav.hidden = false;
+}
+
+function selectFirma(key) {
+  state.activeFirma = key;
+  if (FIRME.includes(key)) {
+    try {
+      localStorage.setItem(FIRMA_STORAGE_KEY, key);
+    } catch {}
+  }
+  if (state.activeTab === "sifrarnik") renderSifrarnik();
+  else renderInformacije();
+  window.scrollTo(0, 0);
+}
+
+function populateFirmaSelect(select, selected) {
+  select.innerHTML = "";
+  select.appendChild(new Option("(bez firme)", ""));
+  for (const f of FIRME) select.appendChild(new Option(f, f));
+  select.value = FIRME.includes(selected) ? selected : "";
+}
+
+function defaultFirmaForNew() {
+  return FIRME.includes(state.activeFirma) ? state.activeFirma : "";
+}
+
 el.tabSifrarnik.addEventListener("click", () => showTab("sifrarnik"));
 el.tabInformacije.addEventListener("click", () => showTab("informacije"));
 
@@ -253,7 +336,7 @@ el.logoutBtn.addEventListener("click", async () => {
 async function loadSifrarnik() {
   const { data, error } = await supabase
     .from("sifrarnik")
-    .select("id,grupa_id,ime,username,link,pristup,komentar")
+    .select("id,firma,grupa_id,ime,username,link,pristup,komentar")
     .order("ime", { ascending: true });
   if (error) {
     showToast("Greška pri učitavanju šifrarnika: " + error.message, true);
@@ -276,20 +359,22 @@ async function loadSifrarnikGrupe() {
 // ---------- šifrarnik: prikaz (kartice, grupisano) ----------
 
 function renderSifrarnik() {
+  renderFirmaNav();
   el.sifrarnikList.innerHTML = "";
   const grupaNameById = new Map(state.sifrarnikGrupe.map((g) => [g.id, g.naziv]));
   const q = (el.sifrarnikSearch.value || "").trim().toLowerCase();
+  const firmaRows = state.sifrarnik.filter((r) => rowFirmaKey(r) === state.activeFirma);
   const rows = q
-    ? state.sifrarnik.filter((r) =>
+    ? firmaRows.filter((r) =>
         [grupaNameById.get(r.grupa_id), r.ime, r.username, r.pristup].some((v) =>
           (v || "").toLowerCase().includes(q)
         )
       )
-    : state.sifrarnik;
+    : firmaRows;
 
   if (rows.length === 0) {
     el.sifrarnikList.appendChild(
-      el_("div", "empty-state", state.sifrarnik.length ? "Nema rezultata pretrage." : "Nema unetih šifara.")
+      el_("div", "empty-state", firmaRows.length ? "Nema rezultata pretrage." : "Nema unetih šifara za ovu firmu.")
     );
     return;
   }
@@ -571,6 +656,7 @@ el.sifrarnikDeleteGrupaBtn.addEventListener("click", async () => {
 function openSifrarnikModal(row) {
   state.editingId = row ? row.id : null;
   el.sifrarnikModalTitle.textContent = row ? "Izmena šifre" : "Nova šifra";
+  populateFirmaSelect(el.sifrarnikFirma, row ? row.firma : defaultFirmaForNew());
   populateSifrarnikGrupaSelect(row?.grupa_id || "");
   el.sifrarnikIme.value = row?.ime || "";
   el.sifrarnikUsername.value = row?.username || "";
@@ -604,6 +690,7 @@ el.sifrarnikForm.addEventListener("submit", async (e) => {
   }
 
   const payload = {
+    firma: el.sifrarnikFirma.value || null,
     grupa_id: el.sifrarnikGrupa.value || null,
     ime,
     username: el.sifrarnikUsername.value.trim() || null,
@@ -648,7 +735,7 @@ async function deleteSifrarnik(row) {
 async function loadInformacije() {
   const { data, error } = await supabase
     .from("informacije")
-    .select("id,grupa_id,naslov,tekst")
+    .select("id,firma,grupa_id,naslov,tekst")
     .order("naslov", { ascending: true });
   if (error) {
     showToast("Greška pri učitavanju informacija: " + error.message, true);
@@ -671,18 +758,20 @@ async function loadInformacijeGrupe() {
 // ---------- informacije: prikaz (kartice, grupisano — isti obrazac kao šifrarnik) ----------
 
 function renderInformacije() {
+  renderFirmaNav();
   el.informacijeList.innerHTML = "";
   const grupaNameById = new Map(state.informacijeGrupe.map((g) => [g.id, g.naziv]));
   const q = (el.informacijeSearch.value || "").trim().toLowerCase();
+  const firmaRows = state.informacije.filter((r) => rowFirmaKey(r) === state.activeFirma);
   const rows = q
-    ? state.informacije.filter((r) =>
+    ? firmaRows.filter((r) =>
         [grupaNameById.get(r.grupa_id), r.naslov, r.tekst].some((v) => (v || "").toLowerCase().includes(q))
       )
-    : state.informacije;
+    : firmaRows;
 
   if (rows.length === 0) {
     el.informacijeList.appendChild(
-      el_("div", "empty-state", state.informacije.length ? "Nema rezultata pretrage." : "Nema unetih informacija.")
+      el_("div", "empty-state", firmaRows.length ? "Nema rezultata pretrage." : "Nema unetih informacija za ovu firmu.")
     );
     return;
   }
@@ -878,6 +967,7 @@ el.informacijaDeleteGrupaBtn.addEventListener("click", async () => {
 function openInformacijaModal(row) {
   state.editingInformacijaId = row ? row.id : null;
   el.informacijaModalTitle.textContent = row ? "Izmena informacije" : "Nova informacija";
+  populateFirmaSelect(el.informacijaFirma, row ? row.firma : defaultFirmaForNew());
   populateInformacijaGrupaSelect(row?.grupa_id || "");
   el.informacijaNaslov.value = row?.naslov || "";
   el.informacijaTekst.value = row?.tekst || "";
@@ -906,6 +996,7 @@ el.informacijaForm.addEventListener("submit", async (e) => {
   }
 
   const payload = {
+    firma: el.informacijaFirma.value || null,
     grupa_id: el.informacijaGrupa.value || null,
     naslov,
     tekst: el.informacijaTekst.value.trim() || null,

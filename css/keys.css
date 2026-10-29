@@ -111,11 +111,68 @@ body {
   font-size: 18px;
 }
 
+/* ---------- firme (Absolute / RST / M&M Tracking / VRH) ---------- */
+
+.firma-nav {
+  position: sticky;
+  top: var(--topbar-h, 0px);
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 4px;
+  background: var(--header-bg);
+}
+
+.firma-nav[hidden] { display: none; }
+
+.firma-nav-btn {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.firma-nav-btn.is-active {
+  background: var(--header-text);
+  border-color: var(--header-text);
+  color: var(--header-bg);
+}
+
+.firma-nav-btn.is-nerazvrstano:not(.is-active) {
+  border-style: dashed;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.firma-nav-count {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.firma-nav-btn.is-active .firma-nav-count {
+  background: rgba(32, 18, 77, 0.12);
+}
+
 /* ---------- tabovi (Šifrarnik / Informacije) ---------- */
 
 .tab-nav {
   position: sticky;
-  top: var(--topbar-h, 0px);
+  top: calc(var(--topbar-h, 0px) + var(--firmanav-h, 0px));
   z-index: 4;
   display: flex;
   gap: 6px;
@@ -145,7 +202,7 @@ body {
 
 .toolbar {
   position: sticky;
-  top: calc(var(--topbar-h, 0px) + var(--tabnav-h, 0px));
+  top: calc(var(--topbar-h, 0px) + var(--firmanav-h, 0px) + var(--tabnav-h, 0px));
   z-index: 3;
   display: flex;
   gap: 8px;
