@@ -73,7 +73,7 @@ const el = {
 const state = {
   permissions: {},
   activeTab: "sifrarnik",
-  activeFirma: loadSavedFirma(),
+  activeFirma: null, // postavlja se ispod, posle FIRME
   sifrarnik: [],
   sifrarnikGrupe: [],
   expandedGroups: new Set(),
@@ -101,6 +101,7 @@ function loadSavedFirma() {
   } catch {}
   return FIRME[0];
 }
+state.activeFirma = loadSavedFirma();
 
 function rowFirmaKey(row) {
   return FIRME.includes(row.firma) ? row.firma : NERAZVRSTANO;
